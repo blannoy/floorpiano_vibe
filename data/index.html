@@ -1,0 +1,2198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Floor Piano</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh}
+header{background:#16213e;padding:10px 16px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #0f3460}
+header h1{font-size:1.1rem;font-weight:600;color:#e94560}
+#status{font-size:.8rem;padding:3px 10px;border-radius:10px;background:#0f3460}
+#status.ok{background:#1a5c38;color:#6fff9e}
+#status.err{background:#5c1a1a;color:#ff6f6f}
+nav{display:flex;gap:2px;padding:8px 12px;background:#16213e;border-bottom:1px solid #0f3460}
+nav button{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;background:#0f3460;color:#a0b4cc;transition:.15s}
+nav button.active{background:#e94560;color:#fff}
+.tab{display:none;padding:16px}
+.tab.active{display:block}
+/* sub-tabs inside the Settings tab */
+#subnav{display:flex;flex-wrap:wrap;gap:2px;margin:-4px 0 14px;padding-bottom:10px;border-bottom:1px solid #0f3460}
+#subnav button{padding:5px 12px;border:none;border-radius:6px;cursor:pointer;font-size:.82rem;background:#1a2a40;color:#a0b4cc;transition:.15s}
+#subnav button.active{background:#2a5080;color:#fff}
+.subtab{display:none}
+.subtab.active{display:block}
+
+/* ── Piano tab ── */
+#piano-wrap{overflow-x:auto;padding:16px 0}
+#piano-keys{position:relative;display:inline-flex;user-select:none}
+.wkey{width:46px;height:160px;background:#f5f0e8;border:1px solid #888;border-radius:0 0 6px 6px;position:relative;cursor:pointer;z-index:1;transition:background .05s}
+.wkey.on{background:#ffe082}
+.wkey .klabel{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);font-size:.65rem;color:#555;pointer-events:none}
+.bkey{width:28px;height:100px;background:#222;border-radius:0 0 4px 4px;position:absolute;top:0;z-index:2;cursor:pointer;transition:background .05s;border:1px solid #111}
+.bkey.on{background:#ffa000}
+/* BLE-keyboard letter overlays — only visible when the piano-keys container is
+   tagged with .ble-kbd (set when BLE keyboard mode is running). */
+.kbdlabel{display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  font-size:.75rem;font-weight:600;color:#3a4060;background:#fffbe6;
+  border:1px solid #d0b070;border-radius:3px;padding:1px 5px;pointer-events:none;
+  text-transform:uppercase}
+.bkey .kbdlabel{color:#ffe082;background:#1a2a40;border-color:#3a4060}
+#piano-keys.ble-kbd .kbdlabel{display:block}
+.vol-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding:0 4px}
+.vol-row label{font-size:.85rem;color:#a0b4cc}
+#vol{width:160px;accent-color:#e94560}
+#oct-shift{font-size:.85rem;color:#a0b4cc;margin-left:20px}
+#oct-shift button{padding:4px 10px;background:#0f3460;border:1px solid #e94560;color:#e0e0e0;border-radius:4px;cursor:pointer;margin:0 2px}
+#piano-info{margin-top:10px;font-size:.8rem;color:#607080}
+#piano-live-btn{padding:8px 18px;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;font-weight:600;transition:.15s}
+#piano-live-btn.live-off{background:#0f3460;color:#a0b4cc;border:1px solid #2a5080}
+#piano-live-btn.live-on{background:#1a5c38;color:#6fff9e}
+
+/* ── Status tab ── */
+#key-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;max-width:500px}
+.kbox{background:#0f3460;border-radius:6px;padding:8px 4px;text-align:center;transition:background .05s}
+.kbox.on{background:#e94560}
+.kbox .kidx{font-size:.65rem;color:#607080}
+.kbox .kname{font-size:.85rem;font-weight:600;margin:2px 0}
+.kbox .kval{font-size:.65rem;color:#a0b4cc;display:none}
+.kbox.calib-on .kval{display:block}
+#calib-toggle{margin-bottom:12px}
+
+/* ── Settings tab ── */
+.section{background:#16213e;border-radius:8px;padding:14px;margin-bottom:14px}
+.section h3{font-size:.9rem;color:#e94560;margin-bottom:12px;border-bottom:1px solid #0f3460;padding-bottom:6px}
+.row{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.row label{min-width:140px;font-size:.82rem;color:#a0b4cc}
+.row input[type=number]{width:80px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px;font-size:.85rem}
+.row input[type=range]{flex:1;min-width:80px;accent-color:#e94560}
+.row span.vv{font-size:.8rem;min-width:30px;color:#e94560}
+.row select{padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px;font-size:.85rem}
+button.save{padding:8px 20px;background:#e94560;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.9rem}
+button.save:hover{background:#c73050}
+button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;border-radius:6px;color:#e0e0e0;cursor:pointer;font-size:.85rem;margin-right:8px}
+.ktable{width:100%;border-collapse:collapse;font-size:.8rem}
+.ktable th{background:#0f3460;padding:6px;text-align:left;color:#a0b4cc}
+.ktable td{padding:5px 4px;border-bottom:1px solid #0f3460}
+.ktable input{width:56px;padding:3px;background:#1a2a40;border:1px solid #2a5080;color:#e0e0e0;border-radius:3px;font-size:.8rem}
+.ktable tr.tr-on td{background:#1a3a20}
+
+/* ── Calibrate key selector ── */
+#cal-keysel{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;max-width:640px}
+.cal-key{font-size:.62rem;text-align:center;padding:4px 2px;border-radius:4px;background:#0f3460;
+  border:1px solid #2a5080;cursor:pointer;user-select:none;color:#a0b4cc;transition:.1s}
+.cal-key.sel{background:#1a5c38;border-color:#6fff9e;color:#dfffe9}
+.cal-key .ck-n{display:block;font-size:.55rem;color:#607080}
+.cal-key.sel .ck-n{color:#6fff9e}
+
+/* ── Bars (cross-talk monitor) tab ── */
+#bars-wrap{display:flex;gap:3px;align-items:stretch;height:260px;padding:12px 10px;
+  background:#0f1f33;border-radius:8px;overflow-x:auto}
+.bar-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:30px;flex:1}
+.bar-val{font-size:.6rem;color:#a0b4cc;height:12px;margin-bottom:2px}
+.bar-track{position:relative;width:100%;flex:1;background:#1a2a40;border-radius:3px;overflow:hidden}
+.bar-fill{position:absolute;bottom:0;left:0;width:100%;background:#6fff9e;transition:height .04s,background .04s}
+.bar-col.hit .bar-fill{background:#ffa000}
+.bar-thresh{position:absolute;left:0;width:100%;height:0;border-top:2px dashed #ff5c7a;opacity:.95;z-index:2}
+.bar-label{font-size:.58rem;color:#607080;margin-top:4px;text-align:center;line-height:1.1}
+.bar-col.hit .bar-label{color:#ffa000;font-weight:600}
+
+/* ── Threshold wizard full-screen overlay ── */
+.thwiz-overlay{display:none;position:fixed;inset:0;z-index:3000;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;padding:4vh 4vw;gap:2.5vh;
+  background:#0e2233;transition:background-color .25s}
+.thwiz-overlay.show{display:flex}
+.thwiz-overlay.state-wait{background:#0e2233}
+.thwiz-overlay.state-rec{background:#5a3d00}
+.thwiz-overlay.state-done{background:#0f5c34}
+.thwiz-progress{font-size:3.2vw;color:#9fb4cc;letter-spacing:.05em;text-transform:uppercase}
+.thwiz-prompt{font-size:9vw;font-weight:800;line-height:1.05;color:#fff}
+.thwiz-sub{font-size:4.5vw;font-weight:600;color:#ffe082;min-height:1.2em}
+.thwiz-bigbar{width:80vw;height:9vh;background:rgba(0,0,0,.35);border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.15)}
+.thwiz-bigfill{height:100%;width:0%;background:#6fff9e;transition:width .05s,background-color .1s}
+.thwiz-nums{display:flex;gap:10vw;align-items:flex-end}
+.thwiz-num-big{display:block;font-size:7vw;font-weight:800;color:#6fff9e;line-height:1}
+.thwiz-num-mid{display:block;font-size:5vw;font-weight:700;color:#ffa000;line-height:1}
+.thwiz-num-lbl{display:block;font-size:2.2vw;color:#9fb4cc;margin-top:.4em}
+.thwiz-actions{display:flex;gap:3vw;margin-top:1vh}
+.thwiz-actions button{font-size:3vw;padding:1.6vh 4vw;border-radius:10px}
+
+/* ── Debug tab ── */
+#debug-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.debug-chart{background:#0f3460;border-radius:8px;padding:12px;border:1px solid #2a5080}
+.debug-chart-title{font-size:.9rem;font-weight:600;color:#e94560;margin-bottom:8px}
+.debug-chart canvas{display:block;width:100%;height:150px;border-radius:4px;background:#1a2a40}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+  padding:10px 22px;border-radius:8px;font-size:.9rem;font-weight:600;color:#fff;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:1000;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{background:#1a5c38}
+#toast.err{background:#5c1a1a}
+#toast.info{background:#0f3460;border:1px solid #2a5080}
+
+/* ── System tab ── */
+#sys-info{background:#0f3460;padding:12px;border-radius:6px;margin-bottom:12px;font-size:.85rem;line-height:1.8}
+.sys-kv{display:flex;gap:10px}
+.sys-k{color:#607080;min-width:120px}
+.sys-v{color:#e0e0e0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Floor Piano</h1>
+  <div id="status" class="err">Disconnected</div>
+</header>
+<div id="toast"></div>
+<nav id="topnav">
+  <button class="active" onclick="showTab('piano')">Piano</button>
+  <button onclick="showTab('settings')">Settings</button>
+  <button onclick="showTab('system')">System</button>
+</nav>
+
+<!-- ═══ PIANO TAB ═══ -->
+<div id="tab-piano" class="tab active">
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button id="piano-live-btn" class="live-off" onclick="togglePoll()">▶ Start playing</button>
+    <span id="piano-ble-row" style="display:none;align-items:center;gap:8px">
+      <label for="piano-output" style="font-size:.78rem;color:#a0b4cc">Output:</label>
+      <select id="piano-output" onchange="setPianoOutput()" style="padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px;font-size:.82rem">
+        <option value="ws">Browser / Web (default)</option>
+        <option value="kbd">Bluetooth keyboard</option>
+        <option value="midi">Bluetooth MIDI</option>
+      </select>
+      <span class="ble-status-chip" style="font-size:.78rem;color:#607080">Off</span>
+    </span>
+    <span style="font-size:.78rem;color:#607080">
+      Keys only respond while live. Turn this off during setup/calibration so the piano stays quiet.
+    </span>
+  </div>
+  <div id="piano-wrap"><div id="piano-keys"></div></div>
+  <div class="vol-row">
+    <label>Volume</label>
+    <input type="range" id="vol" min="0" max="100" value="70">
+    <span id="vol-val">70%</span>
+    <span id="oct-shift">
+      Octave <button onclick="shiftOct(-1)">−</button>
+      <span id="oct-disp">0</span>
+      <button onclick="shiftOct(1)">+</button>
+    </span>
+  </div>
+  <div id="piano-info">Touch the floor keys — they'll light up here and play sound.</div>
+</div>
+
+<!-- ═══ SETTINGS (wrapper containing the sub-tabs) ═══ -->
+<div id="tab-settings" class="tab">
+<nav id="subnav">
+  <button class="active" onclick="showSubTab('bars')">Monitor</button>
+  <button onclick="showSubTab('debug')">Debug</button>
+  <button onclick="showSubTab('calibrate')">Calibrate</button>
+  <button onclick="showSubTab('configuration')">Advanced configuration</button>
+  <button onclick="showSubTab('help')">Help</button>
+</nav>
+
+<!-- ═══ DEBUG SUBTAB ═══ -->
+<div id="tab-debug" class="subtab">
+  <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button class="secondary" id="debug-btn" onclick="toggleDebug()">Start Debug Stream</button>
+    <span style="font-size:.8rem;color:#607080">
+      Debug: <span id="debug-stat" style="color:#c73050">OFF</span>
+    </span>
+    <span style="font-size:.72rem;color:#607080">
+      Use <b>▶ Start playing</b> on the Piano tab to control polling.
+    </span>
+  </div>
+  <div style="font-size:.8rem;color:#607080;margin-bottom:16px;display:flex;gap:20px">
+    Key selection:
+    <input type="range" id="debug-key-start" min="0" max="18" value="0" style="width:120px" onchange="updateDebugCharts()">
+    Keys <span id="debug-key-range">0-5</span>
+  </div>
+  <div id="debug-charts" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px"></div>
+</div>
+
+<!-- ═══ MONITOR (BARS) SUBTAB ═══ -->
+<div id="tab-bars" class="subtab active">
+  <div style="margin-bottom:12px;font-size:.82rem;color:#a0b4cc;line-height:1.5">
+    Each bar = <b>Δ (baseline − filtered)</b>, i.e. how hard each key is currently being touched.
+    Press one key and watch whether <b>neighbouring bars also rise</b> — that's cross-talk.
+    The dashed red line is that key's touch threshold; a bar turns <span style="color:#ffa000">orange</span> when registered as a hit.
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+    <span style="font-size:.8rem;color:#607080">Stream:
+      <span id="bars-stat" style="color:#c73050">OFF</span></span>
+    <label style="font-size:.8rem;color:#a0b4cc;display:flex;align-items:center;gap:6px">
+      Scale (max Δ)
+      <input type="range" id="bars-scale" min="16" max="512" value="64" step="16" style="width:140px">
+      <span class="vv" id="bars-scale-v">64</span>
+    </label>
+    <label style="font-size:.8rem;color:#a0b4cc;display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="bars-thresh-show" checked> show threshold line
+    </label>
+  </div>
+  <div id="bars-wrap"></div>
+</div>
+
+<!-- ═══ CALIBRATE SUBTAB ═══ -->
+<div id="tab-calibrate" class="subtab">
+  <div class="section">
+    <h3>Auto-Calibration (per key)</h3>
+    <p style="font-size:.8rem;color:#a0b4cc;line-height:1.5;margin-bottom:12px">
+      This runs the MPR121's built-in auto-configuration, which finds the right
+      <b>charge current &amp; time (CDC/CDT) for every key individually</b> so each pad charges to
+      the same target level — compensating for different pad sizes and wiring lengths.
+      The discovered values are read back, saved to flash, and (when frozen) re-applied on every boot.
+    </p>
+    <p style="font-size:.78rem;color:#80a890;margin-bottom:14px">
+      Stand <b>off</b> all keys while calibrating — it measures the untouched (baseline) charge level.
+    </p>
+
+    <div class="row"><label>Target charge level</label>
+      <input type="range" id="cal-tl" min="120" max="200" value="180" oninput="document.getElementById('cal-tl-v').textContent=this.value">
+      <span class="vv" id="cal-tl-v">180</span>
+      <span style="font-size:.72rem;color:#607080">higher = stronger signal / bigger touch delta (too high may fail → out-of-range)</span>
+    </div>
+    <div class="row">
+      <label>After calibration</label>
+      <select id="cal-mode">
+        <option value="freeze">Freeze values (fixed, predictable)</option>
+        <option value="adaptive">Keep adaptive (re-calibrates each boot, handles drift)</option>
+      </select>
+    </div>
+
+    <div style="margin-top:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <label style="font-size:.82rem;color:#a0b4cc">Keys to calibrate</label>
+        <button class="secondary" style="padding:3px 10px" onclick="calSelectAll(true)">All</button>
+        <button class="secondary" style="padding:3px 10px" onclick="calSelectAll(false)">None</button>
+        <span style="font-size:.74rem;color:#607080">Tip: select a single misbehaving key to re-tune just that one.</span>
+      </div>
+      <div id="cal-keysel"></div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button class="save" onclick="runCalibration()">Run Auto-Calibration</button>
+      <button class="secondary" onclick="setAdaptive()">Reset to adaptive auto-config</button>
+      <span id="cal-status" style="font-size:.82rem;color:#607080;margin-left:8px"></span>
+    </div>
+    <p style="font-size:.74rem;color:#607080;margin-top:8px">
+      Calibrating a subset always <b>freezes</b> those keys (adaptive auto-config would re-tune
+      every key and undo a per-key result).
+    </p>
+  </div>
+
+  <div class="section" id="cal-result-section" style="display:none">
+    <h3 style="cursor:pointer" onclick="toggleCalResult()">Result <span id="cal-result-caret" style="font-size:.8rem;color:#607080">▾</span></h3>
+    <div id="cal-result-body">
+      <p id="cal-summary" style="font-size:.8rem;color:#607080;margin-bottom:10px">Not calibrated yet.</p>
+      <table class="ktable">
+        <thead><tr>
+          <th>#</th><th>Note</th><th>CDC (µA)</th><th>CDT</th><th>Baseline</th><th>Status</th>
+        </tr></thead>
+        <tbody id="cal-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Interactive threshold wizard ── -->
+  <div class="section">
+    <h3>Interactive Threshold Calibration</h3>
+    <p style="font-size:.8rem;color:#a0b4cc;line-height:1.5;margin-bottom:6px">
+      Step on each key when prompted. This measures how strongly each key responds to a real foot
+      and how much the <b>neighbouring keys</b> are pushed up (cross-talk), then sets per-key
+      <b>touch / release thresholds</b> so each key registers reliably while the others stay off.
+    </p>
+    <p style="font-size:.76rem;color:#80a890;margin-bottom:12px">
+      Run the CDC/CDT auto-calibration above first. It measures the keys you selected in the grid
+      (select <b>All</b> for the best cross-talk protection).
+    </p>
+
+    <div class="row">
+      <button class="save" id="thwiz-start" onclick="thwizStart()">Start Threshold Wizard</button>
+      <label style="font-size:.82rem;color:#a0b4cc;display:flex;align-items:center;gap:6px;margin-left:8px">
+        <input type="checkbox" id="thwiz-autodetect"> Auto-detect press
+      </label>
+      <span style="font-size:.72rem;color:#607080">step on &amp; lift off — no button needed</span>
+      <span id="thwiz-info" style="font-size:.82rem;color:#607080;margin-left:8px"></span>
+    </div>
+    <div class="row">
+      <label>Release at</label>
+      <input type="range" id="thwiz-rel" min="2" max="50" value="20" oninput="thwizRecompute()">
+      <span class="vv" id="thwiz-rel-v">20%</span>
+      <span style="font-size:.72rem;color:#607080">
+        % of the key's peak — the press counts as released once the signal drops below this
+        (no need to reach 0). Also becomes the release threshold.
+      </span>
+    </div>
+
+    <!-- live capture panel -->
+    <!-- Full-screen capture overlay (big text + colour cues, readable from the floor) -->
+    <div id="thwiz-capture" class="thwiz-overlay">
+      <div id="thwiz-progress" class="thwiz-progress"></div>
+      <div id="thwiz-prompt" class="thwiz-prompt"></div>
+      <div id="thwiz-sub" class="thwiz-sub"></div>
+      <div class="thwiz-bigbar"><div id="thwiz-bar" class="thwiz-bigfill"></div></div>
+      <div class="thwiz-nums">
+        <div><span id="thwiz-own" class="thwiz-num-big">0</span><span class="thwiz-num-lbl">this key</span></div>
+        <div><span id="thwiz-other" class="thwiz-num-mid">0</span><span class="thwiz-num-lbl">other keys</span></div>
+      </div>
+      <div class="thwiz-actions">
+        <button class="save" id="thwiz-rec" onclick="thwizRecord()">Record</button>
+        <button class="secondary" onclick="thwizSkip()">Skip</button>
+        <button class="secondary" onclick="thwizCancel()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- review / apply -->
+    <div id="thwiz-review" style="display:none;margin-top:14px">
+      <div class="row">
+        <label>Trigger point</label>
+        <input type="range" id="thwiz-trig" min="20" max="80" value="50" oninput="thwizRecompute()">
+        <span class="vv" id="thwiz-trig-v">50%</span>
+        <span style="font-size:.72rem;color:#607080">touch threshold: lower = more sensitive; higher = needs a firmer press</span>
+      </div>
+      <table class="ktable">
+        <thead><tr>
+          <th>#</th><th>Note</th><th>own Δ</th><th>cross-talk Δ</th><th>Touch thr</th><th>Release thr</th><th>Status</th>
+        </tr></thead>
+        <tbody id="thwiz-tbody"></tbody>
+      </table>
+      <div class="row" style="margin-top:12px">
+        <button class="save" onclick="thwizApply()">Apply Thresholds</button>
+        <button class="secondary" onclick="thwizStart()">Re-measure</button>
+        <span id="thwiz-applymsg" style="font-size:.82rem;color:#607080;margin-left:8px"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CONFIGURATION SUBTAB ═══ -->
+<div id="tab-configuration" class="subtab">
+  <!-- MPR121 global -->
+  <div class="section">
+    <h3>MPR121 Global Parameters</h3>
+    <div class="row"><label>Global Touch Threshold</label>
+      <input type="number" id="s-tth" min="1" max="255" value="12">
+      <span style="font-size:.75rem;color:#607080">Lower = more sensitive</span>
+    </div>
+    <div class="row"><label>Global Release Threshold</label>
+      <input type="number" id="s-rth" min="1" max="255" value="6">
+      <span style="font-size:.75rem;color:#607080">Must be &lt; touch threshold</span>
+    </div>
+    <div class="row"><label>Debounce (0x5B)</label>
+      <input type="number" id="s-deb" min="0" max="255" value="0">
+      <span style="font-size:.75rem;color:#607080">bits[6:4]=release bits[2:0]=touch</span>
+    </div>
+    <!-- ── Signal strength helpers (write into the raw AFE bytes below) ── -->
+    <div style="background:#0f2a1a;border:1px solid #1a5c38;border-radius:6px;padding:10px;margin:10px 0">
+      <div style="font-size:.82rem;color:#6fff9e;font-weight:600;margin-bottom:8px">Signal Strength (boost touch sensitivity)</div>
+      <p style="font-size:.74rem;color:#80a890;margin-bottom:10px">
+        A bigger touch <i>delta</i> (the drop below baseline) comes from charging the pad harder.
+        Increase <b>charge current</b> first, then <b>charge time</b>, until the filtered value sits
+        high (≈ 200–250 on the Debug graph) without flat-lining at 1023. To use these you must turn
+        <b>Auto-Config OFF</b> (set it to 0 below) — otherwise the chip overrides them at startup.
+      </p>
+      <div class="row"><label>Charge Current (CDC)</label>
+        <input type="range" id="h-cdc" min="0" max="63" value="63" oninput="cdcChanged()">
+        <span class="vv" id="h-cdc-v">63</span>
+        <span style="font-size:.72rem;color:#607080">µA — higher = stronger signal (max 63)</span>
+      </div>
+      <div class="row"><label>Charge Time (CDT)</label>
+        <select id="h-cdt" onchange="cdtChanged()">
+          <option value="1">0.5 µs</option>
+          <option value="2">1 µs</option>
+          <option value="3">2 µs</option>
+          <option value="4">4 µs</option>
+          <option value="5">8 µs</option>
+          <option value="6">16 µs</option>
+          <option value="7">32 µs</option>
+        </select>
+        <span style="font-size:.72rem;color:#607080">longer = stronger signal (but more noise/power)</span>
+      </div>
+      <div id="cdc-warn" style="display:none;margin-top:8px;padding:8px 10px;border-radius:5px;
+           background:#5c3a00;border:1px solid #ffa000;color:#ffd166;font-size:.76rem">
+        ⚠ <b>Auto-Config is ON</b> (Ctrl0 ≠ 0). The chip will overwrite these manual CDC/CDT
+        values when you apply. Set <b>Auto-Config Ctrl0 = 0</b> below to tune by hand —
+        or use the <b>Calibrate</b> tab to set them per key automatically.
+      </div>
+    </div>
+    <!-- ── Filtering & responsiveness (friendly view of AFE1/AFE2 sample settings) ── -->
+    <div style="background:#0f1f33;border:1px solid #2a5080;border-radius:6px;padding:10px;margin:10px 0">
+      <div style="font-size:.82rem;color:#9fc4ff;font-weight:600;margin-bottom:6px">Filtering &amp; responsiveness</div>
+      <p style="font-size:.74rem;color:#80a0c0;margin-bottom:10px">
+        Fewer samples / shorter interval = <b>snappier</b> but noisier; more = <b>smoother</b> but
+        more lag. For a foot piano, lower values feel more responsive.
+      </p>
+      <div class="row"><label>Smoothing (1st filter)</label>
+        <select id="h-ffi" onchange="ffiChanged()">
+          <option value="0">6 samples — fastest</option>
+          <option value="1">10 samples</option>
+          <option value="2">18 samples</option>
+          <option value="3">34 samples — smoothest</option>
+        </select>
+      </div>
+      <div class="row"><label>Smoothing (2nd filter)</label>
+        <select id="h-sfi" onchange="sfiChanged()">
+          <option value="0">4 samples — fastest</option>
+          <option value="1">6 samples</option>
+          <option value="2">10 samples</option>
+          <option value="3">18 samples — smoothest</option>
+        </select>
+      </div>
+      <div class="row"><label>Sample interval</label>
+        <select id="h-esi" onchange="esiChanged()">
+          <option value="0">1 ms — fastest</option>
+          <option value="1">2 ms</option>
+          <option value="2">4 ms</option>
+          <option value="3">8 ms</option>
+          <option value="4">16 ms</option>
+          <option value="5">32 ms</option>
+          <option value="6">64 ms</option>
+          <option value="7">128 ms</option>
+        </select>
+        <span style="font-size:.72rem;color:#607080">time between readings (lower = less latency)</span>
+      </div>
+    </div>
+    <!-- raw bytes kept for the firmware protocol; driven entirely by the controls above -->
+    <input type="hidden" id="s-afe1" value="255">
+    <input type="hidden" id="s-afe2" value="48">
+    <div class="row"><label>Auto-Config Ctrl0 – 0x7B</label>
+      <input type="number" id="s-acfg0" min="0" max="255" value="11" oninput="checkAcfgWarn()">
+      <span style="font-size:.75rem;color:#607080">0=off (manual CDC/CDT), 0x0B=auto-config+recal</span>
+    </div>
+    <div class="row"><label>Auto-Config USL – 0x7D</label>
+      <input type="number" id="s-usl" min="0" max="255" value="200"></div>
+    <div class="row"><label>Auto-Config LSL – 0x7E</label>
+      <input type="number" id="s-lsl" min="0" max="255" value="130"></div>
+    <div class="row"><label>Auto-Config TL – 0x7F</label>
+      <input type="number" id="s-tl" min="0" max="255" value="180"></div>
+    <div class="row">
+      <button class="secondary" onclick="resetBaseline()">Reset Baseline</button>
+      <button class="save" onclick="saveMPR()">Apply MPR121 Settings</button>
+    </div>
+  </div>
+
+  <!-- Per-key settings -->
+  <div class="section">
+    <h3>Per-Key Configuration</h3>
+    <p style="font-size:.78rem;color:#607080;margin-bottom:10px">Threshold 0 = use global. Release Delay: key stays ON this many ms after foot lifted (0 = instant).</p>
+    <table class="ktable">
+      <thead><tr>
+        <th>#</th><th>Note</th>
+        <th>Touch Thr</th><th>Release Thr</th>
+        <th>Rel.Delay ms</th>
+        <th title="BLE-keyboard letter / key sent for this pad when BLE keyboard mode is on">BLE key</th>
+      </tr></thead>
+      <tbody id="keys-tbody"></tbody>
+    </table>
+    <div class="row" style="margin-top:12px">
+      <button class="secondary" onclick="setAllDelays()">Set all delays…</button>
+      <button class="secondary" onclick="resetKbdMap()">Reset BLE map to a–x</button>
+      <button class="save" onclick="saveKeys()">Save Key Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HELP / TROUBLESHOOTING SUBTAB ═══ -->
+<div id="tab-help" class="subtab">
+  <div class="section">
+    <h3>Start over (clean reset)</h3>
+    <p style="font-size:.82rem;color:#a0b4cc;line-height:1.5;margin-bottom:10px">
+      Use this when the piano misbehaves in a new place. It clears the saved per-key charge
+      <b>and</b> thresholds, switches the chips back to <b>adaptive auto-config</b>, and reboots so
+      they re-calibrate fresh on the current floor. Afterwards, run
+      <b>Calibrate → Auto-Calibration</b>, then the <b>Threshold wizard</b>.
+    </p>
+    <div class="row">
+      <button class="save" onclick="quickReset()">Reset sensors &amp; reboot</button>
+      <span id="reset-msg" style="font-size:.82rem;color:#607080;margin-left:8px"></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Live diagnostics</h3>
+    <p style="font-size:.78rem;color:#607080;margin-bottom:10px">
+      Tells sensor problems from link problems at a glance. <b>Frames/s = 0</b> while connected → it's
+      the WiFi link (pick a clear channel, move closer). <b>Frames arriving but Δ stays ~0 on touch</b>
+      → it's the sensor (grounding/charge/wiring) — see the checklist below.
+    </p>
+    <div class="row">
+      <button class="secondary" id="diag-btn" onclick="toggleDiag()">Start diagnostics</button>
+      <label style="font-size:.82rem;color:#a0b4cc">Watch key
+        <input type="number" id="diag-key" min="0" max="23" value="0" style="width:54px;padding:3px 5px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px"></label>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
+      <div><div id="diag-delta" style="font-size:2rem;font-weight:700;color:#6fff9e">—</div><div style="font-size:.7rem;color:#607080">touch Δ (baseline−filtered)</div></div>
+      <div><div id="diag-filt" style="font-size:1.3rem;color:#a0b4cc">—</div><div style="font-size:.7rem;color:#607080">filtered</div></div>
+      <div><div id="diag-base" style="font-size:1.3rem;color:#a0b4cc">—</div><div style="font-size:.7rem;color:#607080">baseline</div></div>
+      <div><div id="diag-fps" style="font-size:1.3rem;color:#ffd166">—</div><div style="font-size:.7rem;color:#607080">frames/s</div></div>
+      <div><div id="diag-heap" style="font-size:1.3rem;color:#a0b4cc">—</div><div style="font-size:.7rem;color:#607080">free heap (B)</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Why doesn't it work? — troubleshooting</h3>
+    <div style="font-size:.82rem;color:#cdd8e4;line-height:1.55">
+      <details open><summary style="cursor:pointer;color:#e94560;font-weight:600">It connects, but keys do nothing / Debug graphs are frozen</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li><b>Check the link first.</b> Start <b>Live diagnostics</b> above. If <b>frames/s = 0</b> while it says Connected, it's the WiFi, not the pads.</li>
+          <li><b>Pick a clear channel.</b> Settings → System → WiFi → <b>Scan channels</b>, use the recommended one, Save WiFi, reboot. Busy 2.4 GHz (libraries, offices) jams the default channel.</li>
+          <li><b>Move the laptop next to the device</b> and keep the antenna clear of metal.</li>
+          <li><b>Are the chips alive?</b> System → Device Info → <b>MPR121 #0/#1</b> must say Connected. If not, reseat the I²C wires (SDA/SCL/3V3/GND) and the address pins.</li>
+        </ul>
+      </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">Frames arrive but touch barely moves Δ (weak / erratic)</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li><b>Reset &amp; recalibrate</b> (button at the top) — old calibration from another room can rail the readings. Then Auto-Calibration → Threshold wizard.</li>
+          <li><b>Boost the signal:</b> Configuration → raise <b>charge current (CDC)</b> then <b>charge time (CDT)</b>, or just let Auto-Calibration set them.</li>
+          <li><b>Grounding/earth:</b> capacitive touch needs an earth reference. Try a different power source, or run a wire from the device GND to a real earth point. Bare/thin-sock feet couple far better than thick shoes.</li>
+          <li><b>Floor matters:</b> thick carpet/underlay or a raised floor weakens coupling. A grounded foil/strip under or beside the pads helps.</li>
+        </ul>
+      </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">Several keys fire when I press one (cross-talk)</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li>Run the <b>Threshold wizard</b> (it sets per-key thresholds above each key's cross-talk) and check the <b>Monitor</b> tab while pressing.</li>
+          <li>Raise the wizard's <b>Trigger point</b>; lower the <b>Release threshold %</b> only as far as the “release near cross-talk” warning allows.</li>
+          <li>Increase pad spacing or add a grounded strip between pads.</li>
+        </ul>
+      </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">Noticeable delay / lag</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li>Clear WiFi channel (scan), laptop close, device on a good power supply.</li>
+          <li>Configuration → lower the <b>filter samples (FFI/SFI)</b> and <b>sample interval (ESI)</b> for a snappier sensor (re-run the wizard after — noisier).</li>
+          <li>SoundFont player: drop the <b>audio buffer</b> to 512.</li>
+        </ul>
+      </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">It won't connect at all</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li>Join the <b>FloorPiano</b> WiFi (password <code>piano1234</code>) and open <code>http://192.168.4.1</code>.</li>
+          <li>Power-cycle the device; watch the System tab for the AP IP.</li>
+          <li>If you set a “Join SSID”, the AP follows that network's channel — remove it for a standalone setup.</li>
+        </ul>
+      </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">No sound</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li>Piano tab: press <b>▶ Start playing</b> (polling is off until you do), which also unlocks the browser audio.</li>
+          <li>Using the SoundFont player? Make sure a <code>.sf2</code> is loaded and the buffer isn't muted.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+</div>
+</div><!-- /tab-settings wrapper -->
+
+<!-- ═══ SYSTEM TAB ═══ -->
+<div id="tab-system" class="tab">
+  <div class="section">
+    <h3>Device Info</h3>
+    <div id="sys-info">Loading…</div>
+  </div>
+  <div class="section">
+    <h3>WiFi Configuration</h3>
+    <p style="font-size:.75rem;color:#607080;margin-bottom:10px">
+      SSID/Password = optionally join an existing network. The device always also runs its own
+      “FloorPiano” access point on the channel below.</p>
+    <div class="row"><label>Join SSID</label>
+      <input type="text" id="w-ssid" style="width:200px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+    </div>
+    <div class="row"><label>Password</label>
+      <input type="password" id="w-pass" style="width:200px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px" placeholder="leave blank to keep current">
+    </div>
+    <div class="row"><label>AP channel</label>
+      <input type="number" id="w-channel" min="1" max="13" value="1" style="width:60px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+      <button class="secondary" onclick="scanWifi()">Scan channels</button>
+      <span id="wifi-scan-status" style="font-size:.78rem;color:#607080"></span>
+    </div>
+    <div id="wifi-scan" style="display:none;margin:6px 0 10px">
+      <div style="font-size:.72rem;color:#607080;margin-bottom:4px">Channel congestion (lower = better):</div>
+      <div id="wifi-chanbars" style="display:flex;align-items:flex-end;gap:3px;height:90px;background:#0f1f33;border-radius:6px;padding:8px 6px"></div>
+      <div id="wifi-reco" style="font-size:.82rem;margin-top:8px"></div>
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-size:.78rem;color:#a0b4cc">Nearby networks</summary>
+        <div id="wifi-nets" style="font-size:.74rem;color:#a0b4cc;max-height:150px;overflow:auto;margin-top:4px"></div>
+      </details>
+    </div>
+    <div class="row">
+      <button class="save" onclick="saveWifi()">Save WiFi</button>
+      <span style="font-size:.74rem;color:#607080">AP channel applies after a reboot.</span>
+    </div>
+  </div>
+  <div class="section" id="sec-ble" style="display:none">
+    <h3>Bluetooth (BLE) output
+      <span class="ble-status-chip" style="font-size:.7rem;font-weight:400;color:#607080;margin-left:8px">Off</span>
+    </h3>
+    <p style="font-size:.75rem;color:#607080;margin-bottom:10px">
+      Pair the piano with a PC, tablet or phone over Bluetooth — no Python bridge needed.
+      <b>Keyboard</b> mode acts as a regular Bluetooth keyboard; <b>MIDI</b> mode acts as a
+      Bluetooth MIDI instrument. WiFi keeps running so this config page stays reachable.
+      <b>BLE is off at every boot</b> — click <b>Start BLE</b> to opt in. This also turns
+      on touch polling (otherwise no events would be sent).
+    </p>
+    <div class="row"><label>Device name</label>
+      <input type="text" id="ble-name" maxlength="32" style="width:200px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+      <span style="font-size:.7rem;color:#607080">(MIDI mode uses a fixed name — restart device after changing in keyboard mode)</span>
+    </div>
+    <div class="row"><label>Mode</label>
+      <select id="ble-mode" style="padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+        <option value="0">Keyboard (HID)</option>
+        <option value="1">MIDI</option>
+      </select>
+      <span style="font-size:.7rem;color:#607080">If BLE is running, switching mode restarts the radio (unpair + repair on the host).</span>
+    </div>
+    <div class="row">
+      <button class="save ble-toggle-btn" onclick="toggleBle()">Start BLE</button>
+      <button class="secondary" onclick="saveBleConfig()">Save BLE settings</button>
+      <button class="secondary" onclick="bleReleaseAll()" title="Force-release every held key — use if the host is stuck repeating a key">Panic ⌨</button>
+    </div>
+    <p style="font-size:.7rem;color:#607080;margin-top:8px">
+      Per-key keyboard mapping defaults to <code>a</code>…<code>x</code> (keys 0–23).
+      Customise per-key chars via <code>setConfig</code>; a dedicated UI editor will come later.
+    </p>
+  </div>
+
+  <div class="section">
+    <h3>Firmware / Filesystem Update</h3>
+    <p style="font-size:.78rem;color:#607080;margin-bottom:12px">
+      Upload a new build over WiFi (no USB cable needed). The device reboots automatically after a
+      successful upload. <b>Firmware</b> = <code>.pio/build/nodemcuv2/firmware.bin</code>,
+      <b>Filesystem</b> = <code>.pio/build/nodemcuv2/littlefs.bin</code> (the web app itself).
+    </p>
+    <div class="row">
+      <label>Firmware (.bin)</label>
+      <input type="file" id="fw-file" accept=".bin" style="font-size:.8rem;color:#a0b4cc">
+      <button class="save" onclick="uploadOTA('firmware')">Flash Firmware</button>
+    </div>
+    <div class="row">
+      <label>Filesystem (.bin)</label>
+      <input type="file" id="fs-file" accept=".bin" style="font-size:.8rem;color:#a0b4cc">
+      <button class="save" onclick="uploadOTA('filesystem')">Flash Filesystem</button>
+    </div>
+    <div id="ota-progress-wrap" style="display:none;margin-top:12px">
+      <div style="background:#1a2a40;border-radius:6px;overflow:hidden;height:22px;border:1px solid #2a5080">
+        <div id="ota-bar" style="width:0%;height:100%;background:#e94560;transition:width .15s;text-align:center;font-size:.75rem;line-height:22px;color:#fff">0%</div>
+      </div>
+      <div id="ota-msg" style="font-size:.8rem;color:#a0b4cc;margin-top:6px"></div>
+    </div>
+    <p style="font-size:.75rem;color:#c73050;margin-top:10px">
+      ⚠ Do not close this page or power off the device during upload.
+      A bad firmware image may require a USB re-flash to recover.
+    </p>
+  </div>
+
+  <div class="section" style="margin-top:14px">
+    <h3>Device Control</h3>
+    <button class="secondary" onclick="rebootDevice()">Reboot NodeMCU</button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// Config + state
+// ══════════════════════════════════════════════════════════════════════════════
+const NUM_KEYS = 24;
+let cfg = null;
+let keyState   = new Array(NUM_KEYS).fill(false);
+let calibData  = null;
+let calibMode  = false;
+let octShift   = 0;
+
+// MIDI → note name
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function noteName(midi) {
+  return NOTE_NAMES[midi % 12] + Math.floor(midi / 12 - 1);
+}
+function midiFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WebSocket
+// ══════════════════════════════════════════════════════════════════════════════
+let ws, reconnTimer;
+
+function connectWS() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    clearTimeout(reconnTimer);
+    setStatus(true);
+    ws.send(JSON.stringify({cmd:'getConfig'}));
+    if (calibMode) ws.send(JSON.stringify({cmd:'startCalib'}));
+    streamOn = false;        // device restarted fresh; re-request if a tab needs it
+    updateStream();
+  };
+  ws.onclose  = () => { setStatus(false); streamOn = false; reconnTimer = setTimeout(connectWS, 2000); };
+  ws.onerror  = () => { ws.close(); };
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) handleBinary(new Uint8Array(e.data));
+    else handleJSON(JSON.parse(e.data));
+  };
+}
+
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+    return true;
+  }
+  toast('Not connected to device', 'err');
+  return false;
+}
+
+function setStatus(ok) {
+  const el = document.getElementById('status');
+  el.textContent = ok ? 'Connected' : 'Disconnected';
+  el.className = ok ? 'ok' : 'err';
+}
+
+function handleBinary(data) {
+  if (data[0] === 0x01 && data.length >= 4) {
+    const newState = new Array(NUM_KEYS);
+    for (let i = 0; i < NUM_KEYS; i++) {
+      newState[i] = !!((data[1 + Math.floor(i/8)] >> (i%8)) & 1);
+    }
+    for (let i = 0; i < NUM_KEYS; i++) {
+      if (newState[i] !== keyState[i]) {
+        keyState[i] = newState[i];
+        if (newState[i]) onKeyDown(i);
+        else             onKeyUp(i);
+      }
+    }
+    updatePianoVisual();
+    updateStatusGrid();
+  }
+}
+
+function handleJSON(msg) {
+  if (!msg.type) return;
+  if (msg.type === 'config') { cfg = msg; applyConfigToUI(); }
+  if (msg.type === 'calib')  { calibData = msg.data; updateCalibDisplay(); }
+  if (msg.type === 'debug')  { handleDebugData(msg); }
+  if (msg.type === 'info')   { updateSysInfo(msg); }
+  if (msg.type === 'ack')    { handleAck(msg); }
+  if (msg.type === 'calibResult') { renderCalibResult(msg); }
+  if (msg.type === 'wifiScan')    { renderWifiScan(msg); }
+  if (msg.type === 'bleStatus')   { renderBleStatus(msg); }
+}
+
+// ── Toast feedback ──────────────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(text, kind = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.className = 'show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 2500);
+}
+
+// Acks coming back from the device confirm the write was applied
+const ACK_MSG = {
+  setConfig:     'Settings applied ✓',
+  setKey:        'Key saved ✓',
+  resetBaseline: 'Baseline reset ✓',
+  resetRecover:  'Resetting & rebooting…',
+  startBle:      'BLE started ✓',
+  stopBle:       'BLE stopped ✓',
+  bleReleaseAll: 'All keys released ✓',
+};
+// Device-confirmed effective thresholds from the most recent setConfig ack
+let deviceThresholds = null;   // [{t,r}, …] for 24 keys
+function handleAck(msg) {
+  const cmd = msg.cmd;
+  toast(ACK_MSG[cmd] || 'Done ✓', 'ok');
+  if (cmd === 'setConfig' && Array.isArray(msg.keys)) {
+    deviceThresholds = msg.keys;   // the device's actual stored thresholds
+    confirmThresholdApply(msg.keys);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Piano synthesis (Web Audio API, offline-capable)
+// ══════════════════════════════════════════════════════════════════════════════
+let audioCtx = null;
+const activeNotes = {};
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playMidi(midi) {
+  if (activeNotes[midi]) return;
+  const ctx   = getAudioCtx();
+  const freq  = midiFreq(midi + octShift * 12);
+  const now   = ctx.currentTime;
+  const vol   = parseInt(document.getElementById('vol').value) / 100;
+
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(vol, now + 0.004);
+  master.gain.exponentialRampToValueAtTime(vol * 0.45, now + 0.08);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
+  master.connect(ctx.destination);
+
+  // Harmonics that approximate piano timbre
+  [[1,'triangle',0.80],[2,'sine',0.28],[3,'sine',0.11],
+   [4,'sine',0.06],[6,'sine',0.025],[8,'sine',0.01]].forEach(([r,t,a]) => {
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = t;
+    osc.frequency.value = freq * r;
+    g.gain.value = a;
+    osc.connect(g); g.connect(master);
+    osc.start(now); osc.stop(now + 3.8);
+  });
+
+  activeNotes[midi] = master;
+  setTimeout(() => delete activeNotes[midi], 4000);
+}
+
+function onKeyDown(keyIdx) {
+  const midi = cfg ? cfg.keys[keyIdx].note : (60 + keyIdx);
+  playMidi(midi);
+}
+function onKeyUp(keyIdx) {
+  // piano notes decay naturally — no forced stop
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Piano visual (14 white + 10 black keys for 2 chromatic octaves from C4)
+// ══════════════════════════════════════════════════════════════════════════════
+// chromatic offset → {white key index from left, or -1 if black}
+// C=0,C#=1,D=2,D#=3,E=4,F=5,F#=6,G=7,G#=8,A=9,A#=10,B=11
+const WHITE_IDX = [0,-1,1,-1,2,3,-1,4,-1,5,-1,6]; // -1 = black
+const BLACK_POS = [-1,0.6,-1,1.6,-1,-1,3.6,-1,4.6,-1,5.6,-1]; // fractional pos between whites
+
+const W = 46, B_W = 28, H = 160, B_H = 100;
+
+function buildPiano() {
+  const wrap = document.getElementById('piano-keys');
+  wrap.innerHTML = '';
+
+  // Collect all keys: {chromIdx, octaveOffset}
+  const allKeys = []; // 24 keys 0-23
+  for (let i = 0; i < NUM_KEYS; i++) allKeys.push(i);
+
+  // We draw 2 octaves (14 white keys, 10 black keys)
+  // Default note 60+i → C4..B5
+
+  const whiteEls = [];
+  const blackEls = [];
+
+  for (let oct = 0; oct < 2; oct++) {
+    for (let c = 0; c < 12; c++) {
+      const keyIdx = oct * 12 + c;
+      const midi   = cfg ? cfg.keys[keyIdx].note : (60 + keyIdx);
+      const wIdx   = WHITE_IDX[c];
+      const bPos   = BLACK_POS[c];
+      const globalW = oct * 7 + (wIdx >= 0 ? wIdx : 0);
+      const label  = noteName(midi);
+
+      const kbdRaw = cfg && cfg.keys[keyIdx].kbd ? cfg.keys[keyIdx].kbd : (97 + keyIdx);
+      const kbdCh  = String.fromCharCode(kbdRaw);
+      if (wIdx >= 0) {
+        const el = document.createElement('div');
+        el.className = 'wkey';
+        el.dataset.key = keyIdx;
+        el.innerHTML = `<span class="kbdlabel">${kbdCh}</span><span class="klabel">${label}</span>`;
+        wrap.appendChild(el);
+        whiteEls.push({el, keyIdx});
+      } else {
+        const el = document.createElement('div');
+        el.className = 'bkey';
+        el.dataset.key = keyIdx;
+        // position: left edge of this white-group + bPos * W
+        const baseWhite = oct * 7 + Math.floor(bPos);
+        el.style.left = (baseWhite * W + (bPos % 1) * W - B_W/2 + B_W * 0.1) + 'px';
+        el.dataset.bpos = (oct * 7 + bPos);
+        el.innerHTML = `<span class="kbdlabel">${kbdCh}</span>`;
+        wrap.appendChild(el);
+        blackEls.push({el, keyIdx});
+      }
+    }
+  }
+
+  // Size the container
+  wrap.style.width = (14 * W + 2) + 'px';
+  wrap.style.height = H + 'px';
+
+  // Fix black key positions based on white key positions
+  // (white keys are in document flow, black keys absolutely positioned)
+  wrap.style.position = 'relative';
+}
+
+function updatePianoVisual() {
+  const wrap = document.getElementById('piano-keys');
+  wrap.querySelectorAll('[data-key]').forEach(el => {
+    const k = parseInt(el.dataset.key);
+    el.classList.toggle('on', keyState[k]);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Status grid (24 squares)
+// ══════════════════════════════════════════════════════════════════════════════
+function buildStatusGrid() {
+  const grid = document.getElementById('key-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const midi = cfg ? cfg.keys[i].note : (60 + i);
+    const div  = document.createElement('div');
+    div.className = 'kbox';
+    div.id = 'kbox-' + i;
+    div.innerHTML =
+      `<div class="kidx">#${i}</div>` +
+      `<div class="kname">${noteName(midi)}</div>` +
+      `<div class="kval" id="kv-${i}">—</div>`;
+    grid.appendChild(div);
+  }
+}
+
+function updateStatusGrid() {
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const el = document.getElementById('kbox-' + i);
+    if (el) el.classList.toggle('on', keyState[i]);
+  }
+}
+
+function updateCalibDisplay() {
+  if (!calibData) return;
+  calibData.forEach((d, i) => {
+    const el = document.getElementById('kv-' + i);
+    if (el) el.textContent = `f:${d.f} b:${d.b}`;
+  });
+}
+
+function toggleCalib() {
+  calibMode = !calibMode;
+  wsSend({cmd: calibMode ? 'startCalib' : 'stopCalib'});
+  document.getElementById('calib-btn').textContent =
+    calibMode ? 'Hide filtered values' : 'Show filtered values';
+  document.querySelectorAll('.kbox').forEach(el =>
+    el.classList.toggle('calib-on', calibMode));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Settings tab
+// ══════════════════════════════════════════════════════════════════════════════
+function buildKeysTable() {
+  const tbody = document.getElementById('keys-tbody');
+  tbody.innerHTML = '';
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const k     = cfg ? cfg.keys[i] : {tth:0,rth:0,delay:0,note:60+i,kbd:97+i};
+    const midi  = k.note;
+    const kbdCh = String.fromCharCode(k.kbd || (97 + i));
+    const tr   = document.createElement('tr');
+    tr.id = 'ktr-' + i;
+    tr.innerHTML =
+      `<td>${i}</td>` +
+      `<td>${noteName(midi)}<br><span style="font-size:.7rem;color:#607080">${midi}</span></td>` +
+      `<td><input type="number" min="0" max="255" id="kt-tth-${i}" value="${k.tth}" style="width:52px"></td>` +
+      `<td><input type="number" min="0" max="255" id="kt-rth-${i}" value="${k.rth}" style="width:52px"></td>` +
+      `<td><input type="number" min="0" max="10000" id="kt-dly-${i}" value="${k.delay || 0}" style="width:64px"></td>` +
+      `<td><input type="text" maxlength="1" id="kt-kbd-${i}" value="${kbdCh}" style="width:36px;text-align:center;text-transform:lowercase" title="One character — letter, digit, or punctuation. Use the per-key save to apply."></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function applyConfigToUI() {
+  if (!cfg) return;
+  const m = cfg.mpr || {};
+  document.getElementById('s-tth').value   = m.tth   || 12;
+  document.getElementById('s-rth').value   = m.rth   || 6;
+  document.getElementById('s-deb').value   = m.debounce || 0;
+  document.getElementById('s-afe1').value  = m.afe1  !== undefined ? m.afe1 : 255;
+  document.getElementById('s-afe2').value  = m.afe2  !== undefined ? m.afe2 : 48;
+  document.getElementById('s-acfg0').value = m.acfg0 !== undefined ? m.acfg0 : 11;
+  document.getElementById('s-usl').value   = m.usl   || 200;
+  document.getElementById('s-lsl').value   = m.lsl   || 130;
+  document.getElementById('s-tl').value    = m.tl    || 180;
+  document.getElementById('w-ssid').value  = (cfg.wifi && cfg.wifi.ssid) ? cfg.wifi.ssid : '';
+  if (cfg.wifi && cfg.wifi.channel) document.getElementById('w-channel').value = cfg.wifi.channel;
+  if (cfg.ble) {
+    document.getElementById('ble-name').value = cfg.ble.name || 'FloorPiano';
+    document.getElementById('ble-mode').value = String(cfg.ble.mode || 0);
+  }
+  syncHelpers();
+  buildPiano();
+  buildKeysTable();
+  buildCalKeySel();
+  buildCalibTableFromConfig();
+}
+
+// ── CDC / CDT helper widgets ↔ raw AFE bytes ────────────────────────────────────
+// AFE1 (0x5C): bits[7:6]=FFI  bits[5:0]=CDC(0-63 µA)
+// AFE2 (0x5D): bits[7:5]=CDT  bits[4:3]=SFI  bits[2:0]=ESI
+function cdcChanged() {
+  const cdc  = parseInt(document.getElementById('h-cdc').value);
+  document.getElementById('h-cdc-v').textContent = cdc;
+  const afe1 = parseInt(document.getElementById('s-afe1').value) || 0;
+  const ffi  = afe1 & 0xC0;                       // keep FFI bits
+  document.getElementById('s-afe1').value = ffi | (cdc & 0x3F);
+  checkAcfgWarn();
+}
+function cdtChanged() {
+  const cdt  = parseInt(document.getElementById('h-cdt').value);
+  const afe2 = parseInt(document.getElementById('s-afe2').value) || 0;
+  const rest = afe2 & 0x1F;                        // keep SFI + ESI bits
+  document.getElementById('s-afe2').value = ((cdt & 0x07) << 5) | rest;
+  checkAcfgWarn();
+}
+// Filtering controls → AFE bytes.  FFI = AFE1[7:6]; SFI = AFE2[4:3]; ESI = AFE2[2:0]
+function ffiChanged() {
+  const ffi = parseInt(document.getElementById('h-ffi').value) & 0x03;
+  const afe1 = parseInt(document.getElementById('s-afe1').value) || 0;
+  document.getElementById('s-afe1').value = (ffi << 6) | (afe1 & 0x3F);
+}
+function sfiChanged() {
+  const sfi = parseInt(document.getElementById('h-sfi').value) & 0x03;
+  const afe2 = parseInt(document.getElementById('s-afe2').value) || 0;
+  document.getElementById('s-afe2').value = (afe2 & 0xE7) | (sfi << 3);
+}
+function esiChanged() {
+  const esi = parseInt(document.getElementById('h-esi').value) & 0x07;
+  const afe2 = parseInt(document.getElementById('s-afe2').value) || 0;
+  document.getElementById('s-afe2').value = (afe2 & 0xF8) | esi;
+}
+// Manual CDC/CDT only stick when auto-config is off — warn otherwise
+function checkAcfgWarn() {
+  const acfg0 = parseInt(document.getElementById('s-acfg0').value) || 0;
+  document.getElementById('cdc-warn').style.display = (acfg0 & 0x01) ? 'block' : 'none';
+}
+// Pull all friendly controls back out of the raw bytes (on config load)
+function syncHelpers() {
+  const afe1 = parseInt(document.getElementById('s-afe1').value) || 0;
+  const afe2 = parseInt(document.getElementById('s-afe2').value) || 0;
+  document.getElementById('h-cdc').value   = afe1 & 0x3F;
+  document.getElementById('h-cdc-v').textContent = afe1 & 0x3F;
+  document.getElementById('h-cdt').value   = ((afe2 >> 5) & 0x07) || 1;  // 0 invalid → 0.5µs
+  document.getElementById('h-ffi').value   = (afe1 >> 6) & 0x03;
+  document.getElementById('h-sfi').value   = (afe2 >> 3) & 0x03;
+  document.getElementById('h-esi').value   = afe2 & 0x07;
+  checkAcfgWarn();
+}
+
+function saveMPR() {
+  const data = { mpr: {
+    tth:     parseInt(document.getElementById('s-tth').value),
+    rth:     parseInt(document.getElementById('s-rth').value),
+    debounce:parseInt(document.getElementById('s-deb').value),
+    afe1:    parseInt(document.getElementById('s-afe1').value),
+    afe2:    parseInt(document.getElementById('s-afe2').value),
+    acfg0:   parseInt(document.getElementById('s-acfg0').value),
+    usl:     parseInt(document.getElementById('s-usl').value),
+    lsl:     parseInt(document.getElementById('s-lsl').value),
+    tl:      parseInt(document.getElementById('s-tl').value),
+  }};
+  wsSend({cmd:'setConfig', data});
+}
+
+function saveKeys() {
+  const keys = [];
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const kbdRaw = document.getElementById(`kt-kbd-${i}`).value || String.fromCharCode(97 + i);
+    keys.push({
+      tth:   parseInt(document.getElementById(`kt-tth-${i}`).value),
+      rth:   parseInt(document.getElementById(`kt-rth-${i}`).value),
+      delay: parseInt(document.getElementById(`kt-dly-${i}`).value),
+      note:  cfg ? cfg.keys[i].note : (60+i),
+      kbd:   kbdRaw.charCodeAt(0),     // single char → ASCII byte stored as cfg.keys[i].kbd
+    });
+  }
+  wsSend({cmd:'setConfig', data:{keys}});
+  // Update the piano-key overlays + the document-keyboard reverse map locally so
+  // the change is visible immediately; the device echoes config back on save.
+  if (cfg && cfg.keys) {
+    for (let i = 0; i < NUM_KEYS; i++) cfg.keys[i].kbd = keys[i].kbd;
+    buildPiano();
+  }
+}
+
+function setAllDelays() {
+  const v = prompt('Release delay for all keys (ms):', '0');
+  if (v === null) return;
+  const ms = parseInt(v) || 0;
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const el = document.getElementById(`kt-dly-${i}`);
+    if (el) el.value = ms;
+  }
+}
+
+function resetKbdMap() {
+  // Default: keys 0..23 → 'a'..'x'. Useful when the user has scrambled the map
+  // and wants to get back to a predictable starting point.
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const el = document.getElementById(`kt-kbd-${i}`);
+    if (el) el.value = String.fromCharCode(97 + i);
+  }
+}
+
+function resetBaseline() {
+  wsSend({cmd:'resetBaseline'});
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Calibrate tab
+// ══════════════════════════════════════════════════════════════════════════════
+const CDT_US = ['off', '0.5', '1', '2', '4', '8', '16', '32'];  // index = CDT code
+function cdtLabel(code) { return (CDT_US[code] || '?') + (code ? ' µs' : ''); }
+
+const calSelected = new Array(NUM_KEYS).fill(true);  // which keys to calibrate
+
+function buildCalKeySel() {
+  const wrap = document.getElementById('cal-keysel');
+  wrap.innerHTML = '';
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const midi = cfg ? cfg.keys[i].note : (60 + i);
+    const d = document.createElement('div');
+    d.className = 'cal-key' + (calSelected[i] ? ' sel' : '');
+    d.id = 'calkey-' + i;
+    d.innerHTML = `${i}<span class="ck-n">${noteName(midi)}</span>`;
+    d.onclick = () => { calSelected[i] = !calSelected[i]; d.classList.toggle('sel', calSelected[i]); };
+    wrap.appendChild(d);
+  }
+}
+
+function calSelectAll(on) {
+  for (let i = 0; i < NUM_KEYS; i++) {
+    calSelected[i] = on;
+    const el = document.getElementById('calkey-' + i);
+    if (el) el.classList.toggle('sel', on);
+  }
+}
+
+function runCalibration() {
+  const tl     = parseInt(document.getElementById('cal-tl').value);
+  let   freeze = document.getElementById('cal-mode').value === 'freeze';
+  const status = document.getElementById('cal-status');
+
+  const keys = [];
+  for (let i = 0; i < NUM_KEYS; i++) if (calSelected[i]) keys.push(i);
+  if (keys.length === 0) { toast('Select at least one key', 'err'); return; }
+
+  const allKeys = keys.length === NUM_KEYS;
+  // Send the key list only for a subset; omit it to mean "all".
+  const payload = {cmd:'autoCalibrate', tl, freeze};
+  if (!allKeys) payload.keys = keys;
+  if (!wsSend(payload)) return;
+
+  showCalResult(true);   // reveal the result panel now that calibration was pushed
+  status.textContent = `Calibrating ${allKeys ? 'all keys' : keys.length + ' key(s)'}… (keep off the keys)`;
+  status.style.color = '#ffd166';
+}
+
+function setAdaptive() {
+  if (!confirm('Switch back to continuous auto-config?\nThis clears the frozen per-key values.'))
+    return;
+  if (wsSend({cmd:'setAdaptive'})) {
+    toast('Adaptive auto-config enabled ✓', 'ok');
+    document.getElementById('cal-summary').textContent =
+      'Adaptive mode: the chip re-calibrates every key on each boot.';
+    document.getElementById('cal-tbody').innerHTML = '';
+  }
+}
+
+// Collapsible result panel (shown only once a calibration has been run)
+function showCalResult(show) {
+  document.getElementById('cal-result-section').style.display = show ? 'block' : 'none';
+  document.getElementById('cal-result-body').style.display = 'block';
+  document.getElementById('cal-result-caret').textContent = '▾';
+}
+function toggleCalResult() {
+  const body = document.getElementById('cal-result-body');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  document.getElementById('cal-result-caret').textContent = open ? '▸' : '▾';
+}
+
+function renderCalibResult(msg) {
+  showCalResult(true);
+  const tbody = document.getElementById('cal-tbody');
+  tbody.innerHTML = '';
+  let oorCount = 0, calCount = 0;
+  msg.keys.forEach((k, i) => {
+    if (k.sel) calCount++;
+    if (k.oor) oorCount++;
+    const midi = cfg ? cfg.keys[i].note : (60 + i);
+    const tr = document.createElement('tr');
+    if (k.oor)       tr.style.background = '#3a1a1a';
+    else if (!k.sel) tr.style.opacity = '0.5';   // not recalibrated this run
+    const statusCell = k.oor ? '<span style="color:#ff6f6f">⚠ out of range</span>'
+                      : k.sel ? '<span style="color:#6fff9e">✓ calibrated</span>'
+                              : '<span style="color:#607080">unchanged</span>';
+    tr.innerHTML =
+      `<td>${i}</td>` +
+      `<td>${noteName(midi)}</td>` +
+      `<td>${k.cdc}</td>` +
+      `<td>${cdtLabel(k.cdt)}</td>` +
+      `<td>${k.base}</td>` +
+      `<td>${statusCell}</td>`;
+    tbody.appendChild(tr);
+  });
+  const summary = document.getElementById('cal-summary');
+  const mode = msg.frozen ? 'frozen (fixed)' : 'adaptive (re-runs each boot)';
+  const scope = msg.subset ? `${calCount} key(s)` : 'all 24 keys';
+  if (oorCount === 0) {
+    summary.innerHTML = `✓ Calibrated ${scope} — values are ${mode}.`;
+    summary.style.color = '#6fff9e';
+  } else {
+    summary.innerHTML = `⚠ ${oorCount} of ${calCount} calibrated key(s) out of range — couldn't reach the target. ` +
+      `Try a <b>lower target level</b>, or check the wiring/pad for those keys.`;
+    summary.style.color = '#ffd166';
+  }
+  document.getElementById('cal-status').textContent = 'Done.';
+  document.getElementById('cal-status').style.color = '#607080';
+  toast(oorCount === 0 ? 'Calibration complete ✓' : `Calibrated, ${oorCount} out of range`,
+        oorCount === 0 ? 'ok' : 'info');
+  // keep local cfg in sync so other tabs reflect the new values
+  if (cfg) msg.keys.forEach((k, i) => { cfg.keys[i].cdc = k.cdc; cfg.keys[i].cdt = k.cdt; });
+}
+
+// Show any saved (frozen) calibration when the page loads
+function buildCalibTableFromConfig() {
+  const tbody = document.getElementById('cal-tbody');
+  if (!cfg) return;
+  const hasCalib = cfg.keys.some(k => k.cdc || k.cdt);
+  const summary = document.getElementById('cal-summary');
+  if (cfg.autoCfgOn) {
+    summary.textContent = 'Adaptive mode: the chip re-calibrates every key on each boot.';
+    tbody.innerHTML = '';
+    return;
+  }
+  if (!hasCalib) { summary.textContent = 'Not calibrated yet.'; tbody.innerHTML = ''; return; }
+  summary.innerHTML = '✓ Showing the saved (frozen) calibration. Re-run any time.';
+  summary.style.color = '#6fff9e';
+  tbody.innerHTML = '';
+  cfg.keys.forEach((k, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td>${i}</td><td>${noteName(k.note)}</td><td>${k.cdc}</td>` +
+      `<td>${cdtLabel(k.cdt)}</td><td>—</td><td style="color:#607080">saved</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Monitor (bars) tab — cross-talk visualisation
+// ══════════════════════════════════════════════════════════════════════════════
+function buildBars() {
+  const wrap = document.getElementById('bars-wrap');
+  wrap.innerHTML = '';
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const midi = cfg ? cfg.keys[i].note : (60 + i);
+    const col = document.createElement('div');
+    col.className = 'bar-col';
+    col.id = 'bar-col-' + i;
+    col.innerHTML =
+      `<div class="bar-val" id="bar-val-${i}"></div>` +
+      `<div class="bar-track"><div class="bar-thresh" id="bar-th-${i}"></div>` +
+      `<div class="bar-fill" id="bar-fill-${i}"></div></div>` +
+      `<div class="bar-label">${i}<br>${noteName(midi)}</div>`;
+    wrap.appendChild(col);
+  }
+}
+
+function updateBars(msg) {
+  if (!msg.data || !Array.isArray(msg.data)) return;
+  const scale  = parseInt(document.getElementById('bars-scale').value) || 128;
+  const showTh = document.getElementById('bars-thresh-show').checked;
+  msg.data.forEach(d => {
+    const i = d.k;
+    const fill = document.getElementById('bar-fill-' + i);
+    if (!fill) return;
+    const delta = Math.max(0, d.b - d.f);          // touch amount
+    fill.style.height = Math.min(100, delta / scale * 100) + '%';
+    document.getElementById('bar-col-' + i).classList.toggle('hit', !!d.p);
+    document.getElementById('bar-val-' + i).textContent = delta;
+    const th = document.getElementById('bar-th-' + i);
+    if (showTh) {
+      th.style.display = 'block';
+      th.style.bottom = Math.min(100, d.th / scale * 100) + '%';
+    } else {
+      th.style.display = 'none';
+    }
+  });
+}
+
+document.getElementById('bars-scale').addEventListener('input', function() {
+  document.getElementById('bars-scale-v').textContent = this.value;
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Interactive threshold wizard
+// ══════════════════════════════════════════════════════════════════════════════
+let thwizQueue = [];          // key indices to measure
+let thwizPos   = 0;
+let thwizOwn   = {};          // key → peak own delta while pressed
+let thwizCross = {};          // key → peak delta induced while OTHER keys pressed
+let thwizRestF = {};          // key → filtered value at rest (our own zero reference)
+let thwizLatestF = {};        // key → most recent filtered value
+let thwizCapturing = false;
+let thwizLiveKey   = -1;      // key currently shown/recorded
+let thwizEndTimer  = null;
+let thwizCountTimer = null;
+let thwizAuto      = false;   // auto-detect press mode
+let thwizAutoPhase = 'waiting';   // 'waiting' | 'pressing' | 'done'
+let thwizReleaseStart = 0;
+const THWIZ_WINDOW_MS = 3000;
+const THWIZ_MIN_SPAN  = 4;    // counts: own−crosstalk must exceed this to be reliable
+const THWIZ_ON        = 8;    // delta to register a press start (auto-detect)
+const THWIZ_OFF       = 4;    // delta below which the key is considered released
+const THWIZ_REL_HOLD  = 400;  // ms below OFF before the press is finalised
+
+function thwizStart() {
+  // Measure the keys selected in the grid (default: all)
+  thwizQueue = [];
+  for (let i = 0; i < NUM_KEYS; i++) if (calSelected[i]) thwizQueue.push(i);
+  if (thwizQueue.length === 0) thwizQueue = Array.from({length: NUM_KEYS}, (_, i) => i);
+
+  thwizOwn = {}; thwizCross = {}; thwizRestF = {}; thwizLatestF = {};
+  thwizQueue.forEach(k => { thwizOwn[k] = 0; thwizCross[k] = 0; });
+  thwizPos = 0;
+  thwizAuto = document.getElementById('thwiz-autodetect').checked;
+
+  thwizActive = true;
+  updateStream();
+  document.getElementById('thwiz-review').style.display = 'none';
+  document.getElementById('thwiz-capture').classList.add('show');
+  document.getElementById('thwiz-start').disabled = true;
+  document.getElementById('thwiz-info').textContent =
+    `Measuring ${thwizQueue.length} key(s)…`;
+  thwizShowKey();
+}
+
+// Set the overlay colour state and (optionally) the big status line
+function thwizState(state, subText) {
+  document.getElementById('thwiz-capture').className = 'thwiz-overlay show state-' + state;
+  if (subText !== undefined) document.getElementById('thwiz-sub').textContent = subText;
+}
+
+function thwizShowKey() {
+  thwizCapturing = false;
+  const k = thwizQueue[thwizPos];
+  thwizLiveKey = k;
+  thwizOwn[k] = 0;
+  thwizAutoPhase = 'waiting';
+  thwizReleaseStart = 0;
+  // Snapshot the current (untouched) filtered value of every key as its zero
+  // reference, so a lingering baseline offset can't corrupt this measurement.
+  for (let j = 0; j < NUM_KEYS; j++)
+    if (thwizLatestF[j] != null) thwizRestF[j] = thwizLatestF[j];
+  const midi = cfg ? cfg.keys[k].note : (60 + k);
+  document.getElementById('thwiz-progress').textContent =
+    `Key ${k}  •  ${thwizPos + 1} / ${thwizQueue.length}`;
+  document.getElementById('thwiz-prompt').textContent = noteName(midi);
+  const rec = document.getElementById('thwiz-rec');
+  if (thwizAuto) {
+    rec.style.display = 'none';
+    thwizState('wait', '⬇  STEP ON THIS KEY');
+  } else {
+    rec.style.display = '';
+    rec.disabled = false;
+    rec.textContent = 'Record';
+    thwizState('wait', 'Stand on it, then press Record');
+  }
+  document.getElementById('thwiz-bar').style.width = '0%';
+}
+
+function thwizRecord() {
+  const k = thwizQueue[thwizPos];
+  thwizOwn[k] = 0;                 // reset this key's own peak for a clean window
+  thwizCapturing = true;
+  const rec = document.getElementById('thwiz-rec');
+  rec.disabled = true;
+
+  const end = performance.now() + THWIZ_WINDOW_MS;
+  clearInterval(thwizCountTimer);
+  thwizCountTimer = setInterval(() => {
+    const left = Math.max(0, (end - performance.now()) / 1000);
+    thwizState('rec', `● RECORDING…  ${left.toFixed(1)}s — KEEP PRESSING`);
+  }, 100);
+
+  clearTimeout(thwizEndTimer);
+  thwizEndTimer = setTimeout(thwizFinishKey, THWIZ_WINDOW_MS);
+}
+
+function thwizFinishKey() {
+  thwizCapturing = false;
+  clearInterval(thwizCountTimer);
+  const k = thwizQueue[thwizPos];
+  thwizState('done', `✓  GOT IT  (Δ ${thwizOwn[k]})`);
+  thwizPos++;
+  setTimeout(() => {
+    if (thwizPos >= thwizQueue.length) thwizFinishAll();
+    else thwizShowKey();
+  }, 800);
+}
+
+function thwizSkip() {
+  thwizCapturing = false;           // abandon any capture in progress
+  clearTimeout(thwizEndTimer);
+  clearInterval(thwizCountTimer);
+  thwizAutoPhase = 'done';
+  thwizPos++;
+  if (thwizPos >= thwizQueue.length) thwizFinishAll();
+  else thwizShowKey();
+}
+
+function thwizCancel() {
+  thwizCapturing = false;
+  clearTimeout(thwizEndTimer);
+  clearInterval(thwizCountTimer);
+  thwizActive = false;
+  updateStream();
+  document.getElementById('thwiz-capture').className = 'thwiz-overlay';   // hide
+  document.getElementById('thwiz-review').style.display = 'none';
+  document.getElementById('thwiz-start').disabled = false;
+  document.getElementById('thwiz-info').textContent = 'Cancelled.';
+}
+
+function thwizFinishAll() {
+  thwizActive = false;
+  updateStream();                   // stream no longer needed
+  document.getElementById('thwiz-capture').className = 'thwiz-overlay';   // hide
+  document.getElementById('thwiz-review').style.display = 'block';
+  document.getElementById('thwiz-start').disabled = false;
+  document.getElementById('thwiz-info').textContent = 'Measurement complete.';
+  thwizRecompute();
+}
+
+// Live readout + peak accumulation, driven by incoming debug frames
+function thwizSample(msg) {
+  if (!msg.data) return;
+  const k = thwizLiveKey;
+  let ownNow = 0, otherMax = 0;
+  msg.data.forEach(d => {
+    thwizLatestF[d.k] = d.f;
+    // Δ relative to our own captured rest (falls back to the chip baseline until
+    // a rest snapshot exists). This ignores any lingering baseline offset.
+    const rest = thwizRestF[d.k] != null ? thwizRestF[d.k] : d.b;
+    const delta = Math.max(0, rest - d.f);
+    if (d.k === k) ownNow = delta;
+    else if (otherMax < delta) otherMax = delta;
+    if (thwizCapturing) {
+      if (d.k === k) { if (delta > thwizOwn[k]) thwizOwn[k] = delta; }
+      else if (thwizCross[d.k] !== undefined && delta > thwizCross[d.k]) thwizCross[d.k] = delta;
+    }
+  });
+  document.getElementById('thwiz-own').textContent = ownNow;
+  document.getElementById('thwiz-other').textContent = otherMax;
+  const bar = document.getElementById('thwiz-bar');
+  bar.style.width = Math.min(100, ownNow / 80 * 100) + '%';
+  bar.style.background = (thwizCapturing || thwizAutoPhase === 'pressing') ? '#ffd166' : '#6fff9e';
+
+  // Auto-detect press: start capturing when the key rises, finalise once it has
+  // been released (below OFF) for THWIZ_REL_HOLD ms.
+  if (thwizAuto && k >= 0) {
+    if (thwizAutoPhase === 'waiting') {
+      if (ownNow > THWIZ_ON) {
+        thwizAutoPhase = 'pressing';
+        thwizCapturing = true;
+        thwizReleaseStart = 0;
+        thwizState('rec', '●  RECORDING…  LIFT YOUR FOOT WHEN DONE');
+      }
+    } else if (thwizAutoPhase === 'pressing') {
+      // Release once the signal falls below the chosen % of this key's peak (no
+      // need to reach 0), held briefly so a momentary dip doesn't end it early.
+      const relLevel = Math.max(THWIZ_OFF, thwizOwn[k] * thwizRelPct());
+      if (ownNow < relLevel) {
+        if (!thwizReleaseStart) thwizReleaseStart = performance.now();
+        else if (performance.now() - thwizReleaseStart >= THWIZ_REL_HOLD) {
+          thwizAutoPhase = 'done';
+          thwizCapturing = false;
+          thwizFinishKey();
+        }
+      } else {
+        thwizReleaseStart = 0;   // still pressing
+      }
+    }
+  }
+}
+
+// Read the two review sliders
+function thwizTrigPct() { return parseInt(document.getElementById('thwiz-trig').value) / 100; }
+function thwizRelPct()  { return parseInt(document.getElementById('thwiz-rel').value)  / 100; }
+
+// Compute suggested thresholds from the measured peaks.
+//   touch   = crosstalk + trigPct·(peak − crosstalk)
+//   release = relPct · peak   (a fraction of the max detected value; more hysteresis
+//             the lower it is). Kept below touch and above the cross-talk level so a
+//             neighbouring press can't hold the key on.
+function thwizComputeRow(k, trigPct, relPct) {
+  const own  = thwizOwn[k]   || 0;
+  const xt   = thwizCross[k] || 0;
+  const span = own - xt;
+  let tth = Math.round(xt + Math.max(2, span * trigPct));
+  tth = Math.max(1, Math.min(254, tth));
+  let rth = Math.round(own * relPct);
+  rth = Math.max(1, Math.min(tth - 1 < 1 ? 1 : tth - 1, rth));
+  const ok = own > 0 && span >= THWIZ_MIN_SPAN;
+  const relWeak = rth <= xt;     // cross-talk may keep the key from releasing
+  return {own, xt, span, tth, rth, ok, relWeak};
+}
+
+function thwizRecompute() {
+  const trigPct = thwizTrigPct(), relPct = thwizRelPct();
+  document.getElementById('thwiz-trig-v').textContent = Math.round(trigPct * 100) + '%';
+  document.getElementById('thwiz-rel-v').textContent  = Math.round(relPct  * 100) + '%';
+  const tbody = document.getElementById('thwiz-tbody');
+  tbody.innerHTML = '';
+  thwizQueue.forEach(k => {
+    const r = thwizComputeRow(k, trigPct, relPct);
+    const midi = cfg ? cfg.keys[k].note : (60 + k);
+    const tr = document.createElement('tr');
+    if (!r.ok) tr.style.background = '#3a1a1a';
+    const status = r.own === 0
+      ? '<span style="color:#607080">no press detected</span>'
+      : !r.ok ? '<span style="color:#ff6f6f">⚠ cross-talk too close</span>'
+      : r.relWeak ? '<span style="color:#ffd166">✓ (release near cross-talk)</span>'
+                  : '<span style="color:#6fff9e">✓ separable</span>';
+    tr.innerHTML =
+      `<td>${k}</td><td>${noteName(midi)}</td>` +
+      `<td>${r.own}</td><td>${r.xt}</td>` +
+      `<td>${r.ok ? r.tth : '—'}</td><td>${r.ok ? r.rth : '—'}</td>` +
+      `<td>${status}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function thwizApply() {
+  const trigPct = thwizTrigPct(), relPct = thwizRelPct();
+  // Build a full 24-key array: measured+separable keys get new thresholds,
+  // everything else keeps its current value.
+  const measured = new Set(thwizQueue);
+  const keys = [];
+  let applied = 0, skipped = 0;
+  thwizExpected = {};   // keyIndex → expected touch threshold (only keys we set)
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const cur = cfg ? cfg.keys[i] : {tth:0, rth:0, note:60+i};
+    let tth = cur.tth, rth = cur.rth;
+    if (measured.has(i)) {
+      const r = thwizComputeRow(i, trigPct, relPct);
+      if (r.ok) { tth = r.tth; rth = r.rth; applied++; thwizExpected[i] = r.tth; }
+      else skipped++;
+    }
+    keys.push({tth, rth, delay: cur.delay || 0, note: cur.note});
+  }
+  if (!wsSend({cmd:'setConfig', data:{keys}})) return;
+  if (cfg) keys.forEach((k, i) => { cfg.keys[i].tth = k.tth; cfg.keys[i].rth = k.rth; });
+  const msg = document.getElementById('thwiz-applymsg');
+  msg.textContent = `Sent ${applied} key(s)${skipped ? `, ${skipped} skipped (unreliable)` : ''} — waiting for device…`;
+  msg.style.color = '#ffd166';
+  buildKeysTable();   // reflect new thresholds in the Settings table
+}
+
+// Verify the device's echoed thresholds match what we set (called from the ack).
+// Device echoes the *effective* per-key threshold, so we only check the keys we set.
+let thwizExpected = null;
+function confirmThresholdApply(deviceKeys) {
+  if (!thwizExpected) return;
+  let total = 0, match = 0;
+  for (const i in thwizExpected) {
+    total++;
+    if (deviceKeys[i] && deviceKeys[i].t === thwizExpected[i]) match++;
+  }
+  const msg = document.getElementById('thwiz-applymsg');
+  if (total === 0) { thwizExpected = null; return; }
+  if (match === total) {
+    msg.textContent = `✓ Device confirmed ${match} per-key threshold(s) stored.`;
+    msg.style.color = '#6fff9e';
+  } else {
+    msg.textContent = `⚠ Device stored ${match}/${total} — ${total - match} didn't take. Try again.`;
+    msg.style.color = '#ff6f6f';
+  }
+  thwizExpected = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// System tab
+// ══════════════════════════════════════════════════════════════════════════════
+function updateSysInfo(info) {
+  document.getElementById('sys-info').innerHTML =
+    `<div class="sys-kv"><span class="sys-k">AP IP</span><span class="sys-v">${info.apIP}</span></div>` +
+    `<div class="sys-kv"><span class="sys-k">STA IP</span><span class="sys-v">${info.staIP || 'Not connected'}</span></div>` +
+    `<div class="sys-kv"><span class="sys-k">MPR121 #0</span><span class="sys-v">${info.mpr0ok ? '✓ Connected' : '✗ Not found'}</span></div>` +
+    `<div class="sys-kv"><span class="sys-k">MPR121 #1</span><span class="sys-v">${info.mpr1ok ? '✓ Connected' : '✗ Not found'}</span></div>`;
+  // Sync polling state reported by the device
+  if (info.poll !== undefined) { pollEnabled = info.poll; refreshPollUI(); }
+  // BLE: show the System section and the Piano-tab shortcut only on platforms
+  // that have a radio
+  const bleSec = document.getElementById('sec-ble');
+  if (bleSec) bleSec.style.display = info.hasBle ? '' : 'none';
+  const bleRow = document.getElementById('piano-ble-row');
+  if (bleRow) bleRow.style.display = info.hasBle ? 'inline-flex' : 'none';
+  if (info.hasBle) renderBleStatus({running: !!info.bleRunning, connected: !!info.bleConnected});
+}
+
+// ── BLE output ──────────────────────────────────────────────────────────────────
+// Status chip and toggle button appear in BOTH the Piano tab (quick access) and
+// System → Bluetooth (full controls); both wear the .ble-status-chip / .ble-toggle-btn
+// classes so we update every occurrence in a single render.
+let bleRunningState = false;
+
+function renderBleStatus(s) {
+  let label, color;
+  if (s.connected)    { label = '● Connected';   color = '#6fff9e'; }
+  else if (s.running) { label = '◌ Advertising'; color = '#ffd166'; }
+  else                { label = 'Off';            color = '#607080'; }
+  document.querySelectorAll('.ble-status-chip').forEach(el => {
+    el.textContent = label;
+    el.style.color = color;
+  });
+  document.querySelectorAll('.ble-toggle-btn').forEach(btn => {
+    btn.textContent = s.running ? 'Stop BLE' : 'Start BLE';
+  });
+  bleRunningState = !!s.running;
+  // Sync the Piano-tab Output dropdown to whatever the device actually reports.
+  // bleStatus carries `mode`; info carries `bleMode`; fall back to cfg.ble.mode.
+  const sel = document.getElementById('piano-output');
+  const mode = (s.mode !== undefined) ? s.mode
+             : (cfg && cfg.ble && cfg.ble.mode !== undefined) ? cfg.ble.mode
+             : 0;
+  if (sel) sel.value = s.running ? (mode == 1 ? 'midi' : 'kbd') : 'ws';
+  // Letter overlays on piano keys: only visible in BLE keyboard mode
+  const pk = document.getElementById('piano-keys');
+  if (pk) pk.classList.toggle('ble-kbd', !!s.running && mode === 0);
+}
+
+function toggleBle() {
+  wsSend({cmd: bleRunningState ? 'stopBle' : 'startBle'});
+}
+
+// Piano-tab "Output" picker: ws / kbd / midi. ws = stop BLE so the WS key-state
+// stream owns the output. kbd/midi = save the chosen BLE mode and start BLE.
+// If BLE is already running, the firmware's setConfig handler restarts it in
+// the new mode automatically — no separate startBle needed in that case.
+function setPianoOutput() {
+  const v = document.getElementById('piano-output').value;
+  if (v === 'ws') {
+    if (bleRunningState) wsSend({cmd: 'stopBle'});
+    return;
+  }
+  const mode = (v === 'midi') ? 1 : 0;
+  wsSend({cmd: 'setConfig', data: {ble: {mode}}});
+  if (!bleRunningState) wsSend({cmd: 'startBle'});
+}
+
+function bleReleaseAll() {
+  wsSend({cmd: 'bleReleaseAll'});
+}
+
+function saveBleConfig() {
+  const name = document.getElementById('ble-name').value.trim() || 'FloorPiano';
+  const mode = parseInt(document.getElementById('ble-mode').value) || 0;
+  if (wsSend({cmd:'setConfig', data:{ble:{name, mode}}}))
+    toast('BLE settings saved ✓', 'ok');
+}
+
+function saveWifi() {
+  const ssid = document.getElementById('w-ssid').value.trim();
+  const pass = document.getElementById('w-pass').value;
+  const channel = parseInt(document.getElementById('w-channel').value) || 1;
+  if (wsSend({cmd:'setConfig', data:{wifi:{ssid, pass, channel}}}))
+    toast('WiFi saved — reboot to apply ✓', 'ok');
+}
+
+// ── WiFi channel scanner ────────────────────────────────────────────────────────
+function scanWifi() {
+  if (!wsSend({cmd:'scanWifi'})) return;
+  const s = document.getElementById('wifi-scan-status');
+  s.textContent = 'Scanning… (the connection may stall for ~2s)';
+  s.style.color = '#ffd166';
+}
+
+function renderWifiScan(msg) {
+  const s = document.getElementById('wifi-scan-status');
+  if (msg.error) { s.textContent = 'Scan failed — try again.'; s.style.color = '#ff6f6f'; return; }
+  s.textContent = `Found ${msg.count} network(s).`;
+  s.style.color = '#607080';
+  document.getElementById('wifi-scan').style.display = 'block';
+
+  const load = msg.load || [];
+  const reco = msg.recommended || 1;
+  const bars = document.getElementById('wifi-chanbars');
+  bars.innerHTML = '';
+  for (let c = 1; c <= 13; c++) {
+    const v = load[c - 1] || 0;
+    const col = v > 66 ? '#e94560' : v > 33 ? '#ffa000' : '#2a8c5a';
+    const isReco = c === reco;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%';
+    wrap.innerHTML =
+      `<div style="width:100%;height:${Math.max(3, v)}%;background:${col};border-radius:2px;` +
+      `${isReco ? 'outline:2px solid #6fff9e;outline-offset:1px' : ''}"></div>` +
+      `<div style="font-size:.6rem;margin-top:3px;color:${isReco ? '#6fff9e' : '#607080'};font-weight:${isReco ? 700 : 400}">${c}</div>`;
+    bars.appendChild(wrap);
+  }
+  document.getElementById('wifi-reco').innerHTML =
+    `Recommended channel: <b style="color:#6fff9e">${reco}</b> ` +
+    `<button class="secondary" style="padding:2px 8px;margin-left:6px" onclick="useWifiChannel(${reco})">Use ${reco}</button>`;
+
+  const nets = (msg.networks || []).slice().sort((a, b) => b.rssi - a.rssi);
+  document.getElementById('wifi-nets').innerHTML = nets.map(n =>
+    `<div>ch ${String(n.ch).padStart(2)} · ${n.rssi} dBm · ${n.ssid || '(hidden)'}</div>`).join('') || '—';
+}
+
+function useWifiChannel(ch) {
+  document.getElementById('w-channel').value = ch;
+  toast(`Channel set to ${ch} — Save WiFi + reboot to apply`, 'ok');
+}
+
+function rebootDevice() {
+  if (confirm('Reboot the NodeMCU?')) wsSend({cmd:'reboot'});
+}
+
+// ── Help tab: live diagnostics ──────────────────────────────────────────────────
+let diagFrames = 0;
+let diagTimer = null;
+function toggleDiag() { if (diagActive) stopDiag(); else startDiag(); }
+function startDiag() {
+  diagActive = true;
+  updateStream();
+  document.getElementById('diag-btn').textContent = 'Stop diagnostics';
+  diagFrames = 0;
+  clearInterval(diagTimer);
+  diagTimer = setInterval(() => {
+    document.getElementById('diag-fps').textContent = diagFrames;
+    diagFrames = 0;
+  }, 1000);
+}
+function stopDiag() {
+  diagActive = false;
+  updateStream();
+  clearInterval(diagTimer);
+  const b = document.getElementById('diag-btn');
+  if (b) b.textContent = 'Start diagnostics';
+}
+function updateDiag(msg) {
+  diagFrames++;
+  if (msg.heap != null) document.getElementById('diag-heap').textContent = msg.heap;
+  if (!msg.data) return;
+  const k = parseInt(document.getElementById('diag-key').value) || 0;
+  const d = msg.data.find(x => x.k === k);
+  if (!d) return;
+  document.getElementById('diag-delta').textContent = Math.max(0, d.b - d.f);
+  document.getElementById('diag-filt').textContent = d.f;
+  document.getElementById('diag-base').textContent = d.b;
+}
+
+// ── Help tab: one-click clean reset ─────────────────────────────────────────────
+function quickReset() {
+  if (!confirm('Reset sensors and reboot?\n\nClears saved per-key charge + thresholds, returns ' +
+               'to adaptive auto-config, and restarts the device. Re-run Auto-Calibration and the ' +
+               'Threshold wizard afterwards.')) return;
+  if (!wsSend({cmd:'resetRecover'})) return;
+  const m = document.getElementById('reset-msg');
+  m.textContent = 'Resetting… the device will reboot; this page reconnects in a few seconds.';
+  m.style.color = '#ffd166';
+  setTimeout(() => location.reload(), 6000);
+}
+
+// ── OTA firmware / filesystem upload ───────────────────────────────────────────
+function uploadOTA(kind) {
+  const fileInput = document.getElementById(kind === 'firmware' ? 'fw-file' : 'fs-file');
+  const file = fileInput.files[0];
+  if (!file) { alert('Choose a .bin file first.'); return; }
+
+  const what = kind === 'firmware' ? 'firmware' : 'filesystem (web app)';
+  if (!confirm(`Flash new ${what}?\n\n${file.name} (${(file.size/1024).toFixed(1)} KB)\n\nThe device will reboot when done.`))
+    return;
+
+  const wrap = document.getElementById('ota-progress-wrap');
+  const bar  = document.getElementById('ota-bar');
+  const msg  = document.getElementById('ota-msg');
+  wrap.style.display = 'block';
+  bar.style.width = '0%';
+  bar.textContent = '0%';
+  msg.textContent = 'Uploading…';
+  msg.style.color = '#a0b4cc';
+
+  const form = new FormData();
+  form.append('update', file, file.name);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/ota/' + kind);
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      bar.style.width = pct + '%';
+      bar.textContent = pct + '%';
+    }
+  };
+
+  xhr.onload = () => {
+    if (xhr.status === 200) {
+      bar.style.width = '100%';
+      bar.textContent = '100%';
+      msg.style.color = '#6fff9e';
+      msg.textContent = '✓ Upload complete. Device is rebooting — this page will reconnect in a few seconds…';
+      // The device reboots; WebSocket will auto-reconnect. Reload after a delay.
+      setTimeout(() => location.reload(), 8000);
+    } else {
+      msg.style.color = '#ff6f6f';
+      msg.textContent = '✗ Update failed (HTTP ' + xhr.status + '). Check the firmware image and try again.';
+    }
+  };
+
+  xhr.onerror = () => {
+    // A connection drop right at the end is normal (device reboots mid-response)
+    msg.style.color = '#ffd166';
+    msg.textContent = 'Connection closed. If the upload reached 100%, the device is likely rebooting — wait, then reload.';
+    setTimeout(() => location.reload(), 8000);
+  };
+
+  xhr.send(form);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Tab navigation + misc
+// ══════════════════════════════════════════════════════════════════════════════
+let currentSub = 'bars';
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#topnav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`#topnav button[onclick="showTab('${name}')"]`).classList.add('active');
+
+  if (name === 'settings') {
+    showSubTab(currentSub);          // restore last sub-tab + its stream state
+  } else {
+    barsActive = false;              // Monitor not visible
+    if (diagActive) stopDiag();      // diagnostics only run on the Help sub-tab
+    updateStream();
+  }
+}
+
+function showSubTab(name) {
+  currentSub = name;
+  document.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#subnav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`#subnav button[onclick="showSubTab('${name}')"]`).classList.add('active');
+
+  // Monitor (bars) sub-tab needs the debug stream while it's visible
+  barsActive = (name === 'bars');
+  if (barsActive && document.getElementById('bars-wrap').childElementCount === 0) buildBars();
+  if (name !== 'help' && diagActive) stopDiag();   // stop diagnostics when leaving Help
+  updateStream();
+}
+
+function shiftOct(d) {
+  octShift = Math.max(-2, Math.min(2, octShift + d));
+  document.getElementById('oct-disp').textContent = octShift >= 0 ? '+'+octShift : octShift;
+}
+
+document.getElementById('vol').addEventListener('input', function() {
+  document.getElementById('vol-val').textContent = this.value + '%';
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Debug tab - real-time charts
+// ══════════════════════════════════════════════════════════════════════════════
+const DEBUG_BUFFER_SIZE = 300;  // ~6 seconds at 50ms updates
+const debugHistory = {};  // key index → {filt: [], base: [], th: [], rh: [], pressed: []}
+let pollEnabled = false;    // device boots with polling OFF; synced from 'info'
+let debugEnabled = false;   // Debug tab manual toggle
+let barsActive   = false;   // Monitor (bars) tab visible
+let thwizActive  = false;   // threshold wizard running
+let diagActive   = false;   // Help-tab live diagnostics running
+let streamOn     = false;   // actual debug-stream state on the device
+
+// The Debug/Monitor tabs, threshold wizard and live diagnostics all consume the
+// debug stream. Turn it on if any wants it, off only when none does.
+function updateStream() {
+    const want = debugEnabled || barsActive || thwizActive || diagActive;
+    if (want && !streamOn)      { if (wsSend({cmd:'startDebug'})) streamOn = true; }
+    else if (!want && streamOn) { wsSend({cmd:'stopDebug'}); streamOn = false; }
+    const el = document.getElementById('bars-stat');
+    if (el) { el.textContent = streamOn ? 'ON' : 'OFF'; el.style.color = streamOn ? '#6fff9e' : '#c73050'; }
+}
+
+// Initialize history buffers
+for (let i = 0; i < NUM_KEYS; i++) {
+    debugHistory[i] = {filt: [], base: [], th: [], rh: [], pressed: []};
+}
+
+function handleDebugData(msg) {
+    if (!msg.data || !Array.isArray(msg.data)) return;
+    msg.data.forEach(d => {
+        const k = d.k;
+        if (debugHistory[k]) {
+            debugHistory[k].filt.push(d.f);
+            debugHistory[k].base.push(d.b);
+            debugHistory[k].th.push(d.th);
+            debugHistory[k].rh.push(d.rh);
+            debugHistory[k].pressed.push(d.p);
+
+            // Trim to buffer size
+            if (debugHistory[k].filt.length > DEBUG_BUFFER_SIZE) {
+                debugHistory[k].filt.shift();
+                debugHistory[k].base.shift();
+                debugHistory[k].th.shift();
+                debugHistory[k].rh.shift();
+                debugHistory[k].pressed.shift();
+            }
+        }
+    });
+    if (barsActive) updateBars(msg);
+    if (thwizActive) thwizSample(msg);
+    if (diagActive) updateDiag(msg);
+}
+
+// Polling drives touch detection, the piano sound and the Python key events.
+// Shared by the Piano "live" button and the Debug tab poll toggle.
+function togglePoll() { setPoll(!pollEnabled); }
+
+function setPoll(on) {
+    pollEnabled = on;
+    if (on) getAudioCtx();   // unlock audio on this user gesture
+    wsSend({cmd: on ? 'startPoll' : 'stopPoll'});
+    refreshPollUI();
+}
+
+function refreshPollUI() {
+    const pb = document.getElementById('piano-live-btn');
+    if (pb) {
+        pb.textContent = pollEnabled ? '● Live — tap to pause' : '▶ Start playing';
+        pb.className   = pollEnabled ? 'live-on' : 'live-off';
+    }
+    updateDebugStatus();
+}
+
+function toggleDebug() {
+    debugEnabled = !debugEnabled;
+    updateStream();
+    updateDebugStatus();
+    if (debugEnabled) {
+        updateDebugCharts();
+        // Start animation loop for charts
+        animateDebugCharts();
+    }
+}
+
+function updateDebugStatus() {
+    const debugEl  = document.getElementById('debug-stat');
+    const debugBtn = document.getElementById('debug-btn');
+    if (debugEl) {
+        debugEl.textContent = debugEnabled ? 'ON' : 'OFF';
+        debugEl.style.color = debugEnabled ? '#6fff9e' : '#c73050';
+    }
+    if (debugBtn) debugBtn.textContent = debugEnabled ? 'Stop Debug Stream' : 'Start Debug Stream';
+}
+
+function updateDebugCharts() {
+    const start = parseInt(document.getElementById('debug-key-start').value);
+    const end = Math.min(start + 6, NUM_KEYS);
+    document.getElementById('debug-key-range').textContent = start + '-' + (end - 1);
+
+    const container = document.getElementById('debug-charts');
+    container.innerHTML = '';
+    for (let i = start; i < end; i++) {
+        const midi = cfg ? cfg.keys[i].note : (60 + i);
+        const div = document.createElement('div');
+        div.className = 'debug-chart';
+        div.innerHTML = `
+            <div class="debug-chart-title">#${i} ${noteName(midi)}</div>
+            <canvas id="debug-canvas-${i}" width="280" height="150"></canvas>
+            <div style="font-size:.7rem;color:#607080;margin-top:6px">
+                F: <span id="debug-filt-${i}">—</span> |
+                B: <span id="debug-base-${i}">—</span> |
+                Hit: <span id="debug-hit-${i}" style="color:#c73050">—</span>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+}
+
+function drawChart(keyIdx) {
+    const canvas = document.getElementById(`debug-canvas-${keyIdx}`);
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const h = debugHistory[keyIdx];
+    const data = h.filt;
+
+    // Match backing-store resolution to the on-screen size so 1px lines stay
+    // crisp instead of being stretched (the canvas is displayed at width:100%).
+    const dpr  = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth  || 280;
+    const cssH = canvas.clientHeight || 150;
+    if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width  = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // draw in CSS pixels
+
+    if (!data || data.length === 0) {
+        ctx.fillStyle = '#1a2a40';
+        ctx.fillRect(0, 0, cssW, cssH);
+        return;
+    }
+
+    const w = cssW, ht = cssH;
+    const px = 34, py = 10;  // padding (left padding holds the y-axis labels)
+    const cw = w - px - 8, ch = ht - py * 2;
+
+    // Find Y scale (data range)
+    const allVals = [...data, ...h.base];
+    const tVals = h.th.length > 0 ? h.th : [];
+    const rVals = h.rh.length > 0 ? h.rh : [];
+    const minV = 0, maxV = Math.max(1024, ...allVals, ...tVals, ...rVals);
+    const yScale = ch / maxV;
+
+    const toY = v => ht - py - v * yScale;
+    const toX = idx => px + (idx / Math.max(1, data.length - 1)) * cw;
+
+    // Background
+    ctx.fillStyle = '#1a2a40';
+    ctx.fillRect(0, 0, w, ht);
+
+    // Threshold zones
+    if (tVals.length > 0 && rVals.length > 0) {
+        const tVal = tVals[tVals.length - 1];
+        const rVal = rVals[rVals.length - 1];
+        const yTh = toY(tVal);
+        const yRh = toY(rVal);
+        ctx.fillStyle = 'rgba(233, 69, 96, 0.15)';
+        ctx.fillRect(px, yRh, cw, yTh - yRh);
+    }
+
+    // Grid lines + Y-axis scale labels
+    ctx.lineWidth = 0.5;
+    ctx.font = '9px system-ui,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+        const y = py + (ch / 4) * i;
+        ctx.strokeStyle = '#2a4060';
+        ctx.beginPath();
+        ctx.moveTo(px, y);
+        ctx.lineTo(px + cw, y);
+        ctx.stroke();
+        // label: value at this gridline (top = maxV, bottom = 0)
+        const val = Math.round(maxV * (1 - i / 4));
+        ctx.fillStyle = '#607080';
+        ctx.fillText(val, px - 5, y);
+    }
+
+    // Baseline (light line)
+    if (h.base.length > 0) {
+        ctx.strokeStyle = '#607080';
+        ctx.lineWidth = 0.75;
+        ctx.beginPath();
+        for (let i = 0; i < h.base.length; i++) {
+            const x = toX(i);
+            const y = toY(h.base[i]);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    // Filtered data (main trace)
+    ctx.strokeStyle = '#6fff9e';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+        const x = toX(i);
+        const y = toY(data[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Current value dot
+    if (data.length > 0) {
+        const curVal = data[data.length - 1];
+        const curX = toX(data.length - 1);
+        const curY = toY(curVal);
+        const isPressed = h.pressed.length > 0 && h.pressed[h.pressed.length - 1];
+        ctx.fillStyle = isPressed ? '#ffa000' : '#6fff9e';
+        ctx.beginPath();
+        ctx.arc(curX, curY, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Stats
+    if (data.length > 0) {
+        const filt = data[data.length - 1];
+        const base = h.base.length > 0 ? h.base[h.base.length - 1] : 0;
+        const pressed = h.pressed.length > 0 ? h.pressed[h.pressed.length - 1] : false;
+        document.getElementById(`debug-filt-${keyIdx}`).textContent = filt;
+        document.getElementById(`debug-base-${keyIdx}`).textContent = base;
+        document.getElementById(`debug-hit-${keyIdx}`).textContent = pressed ? '◆ HIT' : '—';
+        document.getElementById(`debug-hit-${keyIdx}`).style.color = pressed ? '#ffa000' : '#c73050';
+    }
+}
+
+function animateDebugCharts() {
+    const start = parseInt(document.getElementById('debug-key-start').value);
+    const end = Math.min(start + 6, NUM_KEYS);
+    for (let i = start; i < end; i++) {
+        drawChart(i);
+    }
+    if (debugEnabled) {
+        requestAnimationFrame(animateDebugCharts);
+    }
+}
+
+buildPiano();
+buildKeysTable();
+updateDebugCharts();
+refreshPollUI();
+connectWS();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BLE-keyboard visualisation
+// ══════════════════════════════════════════════════════════════════════════════
+// When BLE keyboard mode is active, the floor pads send keystrokes to whatever
+// window is focused. If that happens to be the browser tab showing the Piano
+// page, the keys arrive here as normal keydown/keyup events. We mirror them
+// onto the visual keyboard so you can see what's being typed — without any
+// extra firmware traffic and without breaking the WS↔BLE output exclusivity.
+//
+// Active only while BLE is running in Keyboard mode; ignored when typing into
+// input/select/textarea (so editing BLE name / per-key fields still works).
+function bleKbdReverseMap() {
+  if (!cfg || !cfg.keys) return null;
+  const m = {};
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const c = String.fromCharCode(cfg.keys[i].kbd || (97 + i)).toLowerCase();
+    m[c] = i;
+  }
+  return m;
+}
+function bleVizActive() {
+  if (!bleRunningState) return false;
+  const mode = (cfg && cfg.ble && cfg.ble.mode !== undefined) ? cfg.ble.mode : 0;
+  return mode === 0;   // keyboard mode only — MIDI doesn't send keystrokes
+}
+function isFormFocused() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return false;
+  const t = el.tagName.toLowerCase();
+  return t === 'input' || t === 'textarea' || t === 'select';
+}
+document.addEventListener('keydown', e => {
+  if (!bleVizActive() || isFormFocused()) return;
+  const m = bleKbdReverseMap();
+  if (!m) return;
+  const i = m[e.key.toLowerCase()];
+  if (i === undefined) return;
+  if (!keyState[i]) { keyState[i] = true; updatePianoVisual(); }
+});
+document.addEventListener('keyup', e => {
+  if (!bleVizActive() || isFormFocused()) return;
+  const m = bleKbdReverseMap();
+  if (!m) return;
+  const i = m[e.key.toLowerCase()];
+  if (i === undefined) return;
+  if (keyState[i]) { keyState[i] = false; updatePianoVisual(); }
+});
+</script>
+</body>
+</html>

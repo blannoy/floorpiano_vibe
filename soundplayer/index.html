@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Floor Piano — SoundFont Player</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;padding:18px}
+h1{font-size:1.2rem;color:#e94560;margin-bottom:4px}
+.sub{font-size:.8rem;color:#607080;margin-bottom:16px}
+.card{background:#16213e;border-radius:10px;padding:16px;margin-bottom:14px;border:1px solid #0f3460}
+.card h2{font-size:.95rem;color:#e94560;margin-bottom:12px;border-bottom:1px solid #0f3460;padding-bottom:6px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.row label{min-width:130px;font-size:.85rem;color:#a0b4cc}
+input[type=text],input[type=number],select{padding:6px 8px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:5px;font-size:.85rem}
+input[type=text]{width:160px}
+select{min-width:200px}
+button{padding:7px 16px;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;background:#0f3460;color:#a0b4cc;border:1px solid #2a5080;transition:.15s}
+button.primary{background:#e94560;color:#fff;border:none}
+button.primary:hover{background:#c73050}
+button:disabled{opacity:.5;cursor:not-allowed}
+#conn-status{font-size:.8rem;padding:3px 10px;border-radius:10px;background:#5c1a1a;color:#ff6f6f}
+#conn-status.ok{background:#1a5c38;color:#6fff9e}
+input[type=range]{flex:1;min-width:120px;accent-color:#e94560}
+.hint{font-size:.74rem;color:#607080}
+#keys{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:6px}
+.kdot{aspect-ratio:1;border-radius:4px;background:#0f3460;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#607080;transition:.05s}
+.kdot.on{background:#e94560;color:#fff}
+#sf-list{font-size:.8rem;color:#a0b4cc;margin-top:6px}
+#sf-list .sf{display:flex;align-items:center;gap:8px;padding:3px 0}
+.warn{background:#5c3a00;border:1px solid #ffa000;color:#ffd166;padding:10px;border-radius:6px;font-size:.8rem;margin-bottom:12px;display:none}
+.ok-txt{color:#6fff9e}
+code{background:#0f3460;padding:1px 5px;border-radius:3px;font-size:.78rem}
+</style>
+</head>
+<body>
+<h1>Floor Piano — SoundFont Player</h1>
+<div class="sub">Runs on your laptop. Connects to the NodeMCU over its WebSocket API and plays the
+  key presses through FluidSynth (WebAssembly) using <code>.sf2</code> SoundFonts.</div>
+
+<div id="lib-warn" class="warn"></div>
+
+<!-- Connection -->
+<div class="card">
+  <h2>1 · Connect to the floor piano</h2>
+  <div class="row">
+    <label>Device address</label>
+    <input type="text" id="ip" value="192.168.4.1">
+    <button class="primary" id="connect-btn" onclick="toggleConnect()">Connect</button>
+    <span id="conn-status">Disconnected</span>
+  </div>
+  <div class="hint">Default <code>192.168.4.1</code> is the device's own WiFi (SSID “FloorPiano”).
+    Use its STA IP if it joined your network. Connecting also turns on the device's key polling.</div>
+</div>
+
+<!-- Sound -->
+<div class="card">
+  <h2>2 · Choose the sound</h2>
+  <div class="row">
+    <label>SoundFont (.sf2)</label>
+    <select id="sf-select" onchange="onSelectSf()"><option value="">— none loaded —</option></select>
+    <button onclick="document.getElementById('sf-file').click()">Load .sf2 file…</button>
+    <input type="file" id="sf-file" accept=".sf2" multiple style="display:none" onchange="onPickFiles(event)">
+  </div>
+  <div id="sf-list"></div>
+
+  <div class="row" style="margin-top:10px">
+    <label>Mode</label>
+    <select id="mode" onchange="onModeChange()">
+      <option value="melodic">Melodic instrument</option>
+      <option value="drums">Drum kit (one sound per key)</option>
+    </select>
+  </div>
+  <div class="row" id="instr-row">
+    <label>Instrument</label>
+    <select id="instr" onchange="selectProgram()"></select>
+    <span class="hint">General-MIDI program. “Funny” sounds usually live in a custom .sf2 — load it above and pick its program.</span>
+  </div>
+  <div class="row">
+    <label>Volume</label>
+    <input type="range" id="vol" min="0" max="100" value="60" oninput="setVol(this.value)">
+    <span id="vol-v">60%</span>
+  </div>
+  <div class="row">
+    <label>Audio buffer</label>
+    <select id="buf" onchange="rebuildAudioNode()">
+      <option value="512" selected>512 — lowest latency</option>
+      <option value="1024">1024 — balanced</option>
+      <option value="2048">2048 — most stable (raise this if sound crackles)</option>
+    </select>
+    <button onclick="testNote()">Test sound</button>
+  </div>
+</div>
+
+<!-- Live -->
+<div class="card">
+  <h2>3 · Live keys</h2>
+  <div class="hint">Lights up as the floor keys are pressed (and plays the selected sound).</div>
+  <div id="keys"></div>
+</div>
+
+<!-- FluidSynth (WASM). For OFFLINE use, vendor these into ./lib (see README + fetch-libs script).
+     The CDN lines below are a convenience for a first online test — comment them out for offline. -->
+<script src="lib/libfluidsynth-2.4.6.js" onerror="cdnFallback('libfluidsynth')"></script>
+<script src="lib/js-synthesizer.js" onerror="cdnFallback('js-synthesizer')"></script>
+
+<script>
+const NUM_KEYS = 24;
+let keyNotes = Array.from({length: NUM_KEYS}, (_, i) => 60 + i);   // from device config
+let keyState = new Array(NUM_KEYS).fill(false);
+
+// ── GM instrument names (program 0-127) ────────────────────────────────────────
+const GM = ["Acoustic Grand Piano","Bright Acoustic Piano","Electric Grand Piano","Honky-tonk Piano","Electric Piano 1","Electric Piano 2","Harpsichord","Clavi","Celesta","Glockenspiel","Music Box","Vibraphone","Marimba","Xylophone","Tubular Bells","Dulcimer","Drawbar Organ","Percussive Organ","Rock Organ","Church Organ","Reed Organ","Accordion","Harmonica","Tango Accordion","Acoustic Guitar (nylon)","Acoustic Guitar (steel)","Electric Guitar (jazz)","Electric Guitar (clean)","Electric Guitar (muted)","Overdriven Guitar","Distortion Guitar","Guitar harmonics","Acoustic Bass","Electric Bass (finger)","Electric Bass (pick)","Fretless Bass","Slap Bass 1","Slap Bass 2","Synth Bass 1","Synth Bass 2","Violin","Viola","Cello","Contrabass","Tremolo Strings","Pizzicato Strings","Orchestral Harp","Timpani","String Ensemble 1","String Ensemble 2","SynthStrings 1","SynthStrings 2","Choir Aahs","Voice Oohs","Synth Voice","Orchestra Hit","Trumpet","Trombone","Tuba","Muted Trumpet","French Horn","Brass Section","SynthBrass 1","SynthBrass 2","Soprano Sax","Alto Sax","Tenor Sax","Baritone Sax","Oboe","English Horn","Bassoon","Clarinet","Piccolo","Flute","Recorder","Pan Flute","Blown Bottle","Shakuhachi","Whistle","Ocarina","Lead 1 (square)","Lead 2 (sawtooth)","Lead 3 (calliope)","Lead 4 (chiff)","Lead 5 (charang)","Lead 6 (voice)","Lead 7 (fifths)","Lead 8 (bass + lead)","Pad 1 (new age)","Pad 2 (warm)","Pad 3 (polysynth)","Pad 4 (choir)","Pad 5 (bowed)","Pad 6 (metallic)","Pad 7 (halo)","Pad 8 (sweep)","FX 1 (rain)","FX 2 (soundtrack)","FX 3 (crystal)","FX 4 (atmosphere)","FX 5 (brightness)","FX 6 (goblins)","FX 7 (echoes)","FX 8 (sci-fi)","Sitar","Banjo","Shamisen","Koto","Kalimba","Bag pipe","Fiddle","Shanai","Tinkle Bell","Agogo","Steel Drums","Woodblock","Taiko Drum","Melodic Tom","Synth Drum","Reverse Cymbal","Guitar Fret Noise","Breath Noise","Seashore","Bird Tweet","Telephone Ring","Helicopter","Applause","Gunshot"];
+
+// 24 General-MIDI percussion notes spread across the keys (drum mode)
+const DRUM_NOTES = [36,38,42,46,49,51,45,47,48,50,39,37,56,54,70,69,75,76,77,82,67,68,60,61];
+
+const DRUM_CHANNEL = 9;     // GM channel 10
+const MEL_CHANNEL  = 0;
+const VELOCITY     = 112;
+
+// ── FluidSynth synth ────────────────────────────────────────────────────────────
+let synth = null, audioCtx = null, audioNode = null;
+const sfonts = {};          // name -> sfontId
+let currentName = null;
+let drumMode = false;
+
+function libMissing(which) {
+  const w = document.getElementById('lib-warn');
+  w.style.display = 'block';
+  w.innerHTML = `⚠ Could not load <code>${which}</code>. Put the FluidSynth WASM library in ` +
+    `<code>soundplayer/lib/</code> — run <code>fetch-libs.ps1</code> (or <code>fetch-libs.sh</code>), ` +
+    `then reload. See <code>README.md</code>.`;
+}
+function cdnFallback(which) { /* offline: just report; see README to vendor locally */ libMissing(which); }
+
+async function initSynth() {
+  if (synth) return true;
+  if (typeof JSSynth === 'undefined') { libMissing('js-synthesizer'); return false; }
+  await JSSynth.waitForReady();
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  synth = new JSSynth.Synthesizer();
+  synth.init(audioCtx.sampleRate);
+  rebuildAudioNode();
+  setVol(document.getElementById('vol').value);
+  return true;
+}
+
+function rebuildAudioNode() {
+  if (!synth || !audioCtx) return;
+  if (audioNode) { try { audioNode.disconnect(); } catch (e) {} }
+  const frames = parseInt(document.getElementById('buf').value) || 1024;
+  audioNode = synth.createAudioNode(audioCtx, frames);
+  audioNode.connect(audioCtx.destination);
+}
+
+function setVol(v) {
+  document.getElementById('vol-v').textContent = v + '%';
+  if (synth) synth.setGain(v / 100 * 3);   // FluidSynth gain (0..~10); 3 is a healthy max
+}
+
+// ── SoundFont loading ───────────────────────────────────────────────────────────
+async function loadSoundFont(name, arrayBuffer) {
+  if (!(await initSynth())) return;
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  try {
+    const id = await synth.loadSFont(arrayBuffer);
+    sfonts[name] = id;
+    addSfOption(name);
+    document.getElementById('sf-select').value = name;
+    currentName = name;
+    selectProgram();
+    renderSfList();
+  } catch (e) {
+    alert('Failed to load SoundFont: ' + e);
+  }
+}
+
+function addSfOption(name) {
+  const sel = document.getElementById('sf-select');
+  if ([...sel.options].some(o => o.value === name)) return;
+  const o = document.createElement('option');
+  o.value = name; o.textContent = name;
+  sel.appendChild(o);
+}
+
+function renderSfList() {
+  const el = document.getElementById('sf-list');
+  const names = Object.keys(sfonts);
+  el.innerHTML = names.length
+    ? names.map(n => `<div class="sf">• ${n} ${n === currentName ? '<span class="ok-txt">(active)</span>' : ''}</div>`).join('')
+    : '<span class="hint">No SoundFont loaded yet.</span>';
+}
+
+function onPickFiles(ev) {
+  for (const f of ev.target.files) {
+    const reader = new FileReader();
+    reader.onload = () => loadSoundFont(f.name, reader.result);
+    reader.readAsArrayBuffer(f);
+  }
+  ev.target.value = '';
+}
+
+function onSelectSf() {
+  currentName = document.getElementById('sf-select').value || null;
+  selectProgram();
+  renderSfList();
+}
+
+function onModeChange() {
+  drumMode = document.getElementById('mode').value === 'drums';
+  document.getElementById('instr-row').style.display = drumMode ? 'none' : 'flex';
+  selectProgram();
+}
+
+function selectProgram() {
+  if (!synth || currentName == null || sfonts[currentName] == null) return;
+  const id = sfonts[currentName];
+  if (drumMode) {
+    synth.midiProgramSelect(DRUM_CHANNEL, id, 128, 0);   // bank 128 = GM drum kit
+  } else {
+    const prog = parseInt(document.getElementById('instr').value) || 0;
+    synth.midiProgramSelect(MEL_CHANNEL, id, 0, prog);
+  }
+}
+
+// ── Note playback ───────────────────────────────────────────────────────────────
+function noteFor(keyIdx) {
+  return drumMode ? DRUM_NOTES[keyIdx % DRUM_NOTES.length]
+                  : (keyNotes[keyIdx] != null ? keyNotes[keyIdx] : 60 + keyIdx);
+}
+function onKeyDown(i) {
+  if (!synth) return;
+  synth.midiNoteOn(drumMode ? DRUM_CHANNEL : MEL_CHANNEL, noteFor(i), VELOCITY);
+}
+function onKeyUp(i) {
+  if (!synth) return;
+  synth.midiNoteOff(drumMode ? DRUM_CHANNEL : MEL_CHANNEL, noteFor(i));
+}
+async function testNote() {
+  if (!(await initSynth())) return;
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  if (currentName == null) { alert('Load a SoundFont first.'); return; }
+  const n = drumMode ? DRUM_NOTES[0] : 60;
+  const ch = drumMode ? DRUM_CHANNEL : MEL_CHANNEL;
+  synth.midiNoteOn(ch, n, VELOCITY);
+  setTimeout(() => synth.midiNoteOff(ch, n), 500);
+}
+
+// ── WebSocket to the device ───────────────────────────────────────────────────────
+let ws = null, wantConnect = false, reconnTimer = null;
+
+function toggleConnect() {
+  if (wantConnect) { wantConnect = false; if (ws) ws.close(); clearTimeout(reconnTimer); setConn(false); }
+  else { wantConnect = true; initSynth(); connect(); }
+  document.getElementById('connect-btn').textContent = wantConnect ? 'Disconnect' : 'Connect';
+}
+
+function connect() {
+  const ip = document.getElementById('ip').value.trim() || '192.168.4.1';
+  ws = new WebSocket('ws://' + ip + '/ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    setConn(true);
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    ws.send(JSON.stringify({ cmd: 'getConfig' }));   // learn per-key MIDI notes
+    ws.send(JSON.stringify({ cmd: 'startPoll' }));    // make the device emit key events
+  };
+  ws.onclose = () => { setConn(false); if (wantConnect) reconnTimer = setTimeout(connect, 2000); };
+  ws.onerror = () => { ws.close(); };
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) handleBinary(new Uint8Array(e.data));
+    else { try { handleJson(JSON.parse(e.data)); } catch (x) {} }
+  };
+}
+
+function handleBinary(d) {
+  if (d[0] !== 0x01 || d.length < 4) return;
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const on = !!((d[1 + (i >> 3)] >> (i & 7)) & 1);
+    if (on !== keyState[i]) {
+      keyState[i] = on;
+      const dot = document.getElementById('kdot-' + i);
+      if (dot) dot.classList.toggle('on', on);
+      if (on) onKeyDown(i); else onKeyUp(i);
+    }
+  }
+}
+
+function handleJson(msg) {
+  if (msg.type === 'config' && Array.isArray(msg.keys)) {
+    msg.keys.forEach((k, i) => { if (k && k.note != null) keyNotes[i] = k.note; });
+  }
+}
+
+function setConn(ok) {
+  const el = document.getElementById('conn-status');
+  el.textContent = ok ? 'Connected' : 'Disconnected';
+  el.className = ok ? 'ok' : '';
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(function build() {
+  const instr = document.getElementById('instr');
+  GM.forEach((name, p) => {
+    const o = document.createElement('option');
+    o.value = p; o.textContent = p + ' · ' + name;
+    instr.appendChild(o);
+  });
+  const keys = document.getElementById('keys');
+  for (let i = 0; i < NUM_KEYS; i++) {
+    const d = document.createElement('div');
+    d.className = 'kdot'; d.id = 'kdot-' + i; d.textContent = i;
+    keys.appendChild(d);
+  }
+  renderSfList();
+  // Optionally auto-load SoundFonts listed in soundfonts/manifest.json (when served over http)
+  tryLoadManifest();
+})();
+
+async function tryLoadManifest() {
+  try {
+    const res = await fetch('soundfonts/manifest.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const list = await res.json();   // [{ name, file }]
+    for (const entry of list) {
+      const r = await fetch('soundfonts/' + entry.file);
+      if (r.ok) await loadSoundFont(entry.name || entry.file, await r.arrayBuffer());
+    }
+  } catch (e) { /* no manifest / opened as file:// — use the file picker instead */ }
+}
+</script>
+</body>
+</html>
