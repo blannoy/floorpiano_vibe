@@ -563,6 +563,16 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
           <li>Increase pad spacing or add a grounded strip between pads.</li>
         </ul>
       </details>
+      <details><summary style="cursor:pointer;color:#e94560;font-weight:600">A key stays hit after everyone steps off</summary>
+        <ul style="margin:8px 0 12px 18px">
+          <li><b>Check whether the sensor still sees a touch.</b> Open Monitor and find the key. Its bar shows Δ (baseline − filtered); orange means the sensor's touch status is active. Monitor shows Δ, not the separate baseline and filtered readings—use Debug for those (B = baseline, F = filtered).</li>
+          <li><b>Compare the idle Δ with the red touch-threshold line.</b> If the idle bar is near or above that line, the sensor may be triggering from noise or drift. Note the readings for this key and a nearby good key while the floor is empty.</li>
+          <li><b>Try Reapply Key Settings in Monitor.</b> This sends the current per-key settings and briefly interrupts sensor readings; it can clear a latched reading temporarily, but does not reset the baseline.</li>
+          <li><b>If it returns, inspect the pad and wiring:</b> check for moisture, loose/damaged connections, and grounding or power-supply changes. If several pads are affected, suspect a shared ground, power, or environmental change.</li>
+          <li><b>With all pads clear, try Reset Baseline</b> in Advanced configuration. If readings remain unreliable, run Auto-Calibration, then the Threshold wizard, and verify idle bars stay below their touch thresholds.</li>
+          <li>Do not use a long-hold timeout to auto-release keys: players may intentionally stand on a key. Adjust thresholds based on idle and pressed readings, keeping the release threshold below the touch threshold.</li>
+        </ul>
+      </details>
       <details><summary style="cursor:pointer;color:#e94560;font-weight:600">Noticeable delay / lag</summary>
         <ul style="margin:8px 0 12px 18px">
           <li>Clear WiFi channel (scan), laptop close, device on a good power supply.</li>
