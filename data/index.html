@@ -231,6 +231,12 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
       <input type="checkbox" id="bars-thresh-show" checked> show threshold line
     </label>
   </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="secondary" onclick="reapplyKeySettings()">Reapply Key Settings</button>
+    <span style="font-size:.72rem;color:#607080">
+      Saves and reapplies per-key settings; briefly interrupts sensor readings.
+    </span>
+  </div>
   <div id="bars-wrap"></div>
 </div>
 
@@ -1108,6 +1114,14 @@ function saveKeys() {
     for (let i = 0; i < NUM_KEYS; i++) cfg.keys[i].kbd = keys[i].kbd;
     buildPiano();
   }
+}
+
+function reapplyKeySettings() {
+  if (!cfg || !Array.isArray(cfg.keys) || cfg.keys.length < NUM_KEYS) {
+    toast('Key settings are not loaded yet', 'err');
+    return;
+  }
+  saveKeys();
 }
 
 function setAllDelays() {
