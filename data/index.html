@@ -157,7 +157,6 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
 <div id="tab-piano" class="tab active">
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <button id="piano-live-btn" class="live-off" onclick="togglePoll()">▶ Start playing</button>
-    <button class="secondary" onclick="reapplyKeySettings()">Reset keys</button>
     <span id="piano-ble-row" style="display:none;align-items:center;gap:8px">
       <label for="piano-output" style="font-size:.78rem;color:#a0b4cc">Output:</label>
       <select id="piano-output" onchange="setPianoOutput()" style="padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px;font-size:.82rem">
@@ -169,19 +168,6 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
     </span>
     <span style="font-size:.78rem;color:#607080">
       Keys only respond while live. Turn this off during setup/calibration so the piano stays quiet.
-    </span>
-  </div>
-  <div style="font-size:.72rem;color:#607080;margin:-4px 0 8px">
-    Reset keys reapplies the current per-key settings; sensor readings may briefly pause.
-  </div>
-  <div class="row" style="margin-bottom:12px">
-    <label for="hold-timeout-ms">Maximum hold (all keys)</label>
-    <input type="number" id="hold-timeout-ms" min="1" max="3600000" step="1000"
-      placeholder="milliseconds" style="width:130px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
-    <button class="secondary" onclick="applyHoldTimeout()">Apply timeout</button>
-    <button class="secondary" onclick="removeHoldTimeout()">Remove timeout</button>
-    <span style="font-size:.72rem;color:#607080">
-      Forces a held key off after this time; it stays off until lifted. 0–3,600,000 ms; disabled by default.
     </span>
   </div>
   <div id="piano-wrap"><div id="piano-keys"></div></div>
@@ -196,6 +182,25 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
     </span>
   </div>
   <div id="piano-info">Touch the floor keys — they'll light up here and play sound.</div>
+  <div class="section" style="margin-top:18px">
+    <h3>Tools</h3>
+    <div class="row">
+      <button class="secondary" onclick="reapplyKeySettings()">Reset keys</button>
+      <span style="font-size:.72rem;color:#607080">
+        Reapplies the current per-key settings; sensor readings may briefly pause.
+      </span>
+    </div>
+    <div class="row" style="margin-bottom:0">
+      <label for="hold-timeout-ms">Maximum hold (all keys)</label>
+      <input type="number" id="hold-timeout-ms" min="1" max="3600000" step="1000"
+        placeholder="milliseconds" style="width:130px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+      <button class="secondary" onclick="applyHoldTimeout()">Apply timeout</button>
+      <button class="secondary" onclick="removeHoldTimeout()">Remove timeout</button>
+      <span style="font-size:.72rem;color:#607080">
+        Forces a held key off after this time; it stays off until lifted. Enter 1–3,600,000 ms; disabled by default.
+      </span>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ SETTINGS (wrapper containing the sub-tabs) ═══ -->
@@ -586,7 +591,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
           <li><b>Try Reapply Key Settings in Monitor.</b> This sends the current per-key settings and briefly interrupts sensor readings; it can clear a latched reading temporarily, but does not reset the baseline.</li>
           <li><b>If it returns, inspect the pad and wiring:</b> check for moisture, loose/damaged connections, and grounding or power-supply changes. If several pads are affected, suspect a shared ground, power, or environmental change.</li>
           <li><b>With all pads clear, try Reset Baseline</b> in Advanced configuration. If readings remain unreliable, run Auto-Calibration, then the Threshold wizard, and verify idle bars stay below their touch thresholds.</li>
-          <li>Do not use a long-hold timeout to auto-release keys: players may intentionally stand on a key. Adjust thresholds based on idle and pressed readings, keeping the release threshold below the touch threshold.</li>
+          <li>The Piano page has an optional <b>Maximum hold</b> timeout for cases where you deliberately want forced release. It applies to all keys, and a timed-out key stays off until lifted. Since players may intentionally stand on a key, leave it disabled unless that behavior is acceptable. It does not correct sensor drift. Adjust thresholds from idle and pressed readings, keeping release below touch.</li>
         </ul>
       </details>
       <details><summary style="cursor:pointer;color:#e94560;font-weight:600">Noticeable delay / lag</summary>
@@ -850,7 +855,6 @@ function handleAck(msg) {
 // Piano synthesis (Web Audio API, offline-capable)
 // ══════════════════════════════════════════════════════════════════════════════
 let audioCtx = null;
-const activeNotes = {};
 
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
@@ -859,7 +863,6 @@ function getAudioCtx() {
 }
 
 function playMidi(midi) {
-  if (activeNotes[midi]) return;
   const ctx   = getAudioCtx();
   const freq  = midiFreq(midi + octShift * 12);
   const now   = ctx.currentTime;
@@ -884,8 +887,6 @@ function playMidi(midi) {
     osc.start(now); osc.stop(now + 3.8);
   });
 
-  activeNotes[midi] = master;
-  setTimeout(() => delete activeNotes[midi], 4000);
 }
 
 function onKeyDown(keyIdx) {
@@ -1140,7 +1141,6 @@ function applyHoldTimeout() {
 }
 
 function removeHoldTimeout() {
-  document.getElementById('hold-timeout-ms').value = '';
   wsSend({cmd:'setConfig', data:{holdTimeoutMs:0}});
 }
 
@@ -1809,7 +1809,7 @@ function useWifiChannel(ch) {
 }
 
 function rebootDevice() {
-  if (confirm('Reboot the NodeMCU?')) wsSend({cmd:'reboot'});
+  if (confirm('Reboot the piano?')) wsSend({cmd:'reboot'});
 }
 
 // ── Help tab: live diagnostics ──────────────────────────────────────────────────
