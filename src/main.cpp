@@ -53,6 +53,7 @@ struct AppConfig {
     char    wifiSSID[33];
     char    wifiPass[65];
     uint8_t apChannel;   // SoftAP WiFi channel 1-13 (applied at boot)
+    uint32_t holdTimeoutMs; // 0 = disabled; forced key-off after continuous hold
     uint8_t globalTTH;
     uint8_t globalRTH;
     uint8_t debounce;
@@ -73,6 +74,7 @@ static AppConfig cfg;
 static void configDefaults() {
     memset(&cfg, 0, sizeof(cfg));
     cfg.apChannel = 1;
+    cfg.holdTimeoutMs = 0;
     cfg.globalTTH = 12;
     cfg.globalRTH = 6;
     cfg.debounce  = 0x00;
@@ -104,6 +106,7 @@ static bool configLoad() {
     strlcpy(cfg.wifiPass, doc["wifi"]["pass"] | "", sizeof(cfg.wifiPass));
     cfg.apChannel = doc["wifi"]["channel"] | cfg.apChannel;
     if (cfg.apChannel < 1 || cfg.apChannel > 13) cfg.apChannel = 1;
+    cfg.holdTimeoutMs = doc["holdTimeoutMs"] | cfg.holdTimeoutMs;
 
     JsonObject b = doc["ble"];
     if (!b.isNull()) {
@@ -145,6 +148,7 @@ static bool configSave() {
     doc["wifi"]["ssid"]    = cfg.wifiSSID;
     doc["wifi"]["pass"]    = cfg.wifiPass;
     doc["wifi"]["channel"] = cfg.apChannel;
+    doc["holdTimeoutMs"]   = cfg.holdTimeoutMs;
 
     JsonObject b = doc["ble"].to<JsonObject>();
     b["enabled"] = cfg.bleEnabled;
@@ -337,6 +341,8 @@ static bool          keyDirty      = false;  // unsent key-state change pending
 static unsigned long keyDirtySince = 0;      // when it first became dirty (force timeout)
 static unsigned long keyOffAt[NUM_KEYS];
 static bool          keyOffPending[NUM_KEYS];
+static unsigned long keyPressedAt[NUM_KEYS];
+static bool          keyTimedOut[NUM_KEYS];
 
 // Calibration streaming
 static bool          calibMode    = false;
@@ -435,6 +441,7 @@ static void sendDebugData() {
 static void sendConfig(AsyncWebSocketClient* client) {
     JsonDocument doc;
     doc["type"] = "config";
+    doc["holdTimeoutMs"] = cfg.holdTimeoutMs;
     doc["wifi"]["ssid"]    = cfg.wifiSSID;
     doc["wifi"]["channel"] = cfg.apChannel;
     // never send password back
@@ -602,6 +609,21 @@ static void handleWsMessage(AsyncWebSocketClient* client, uint8_t* data, size_t 
     if (strcmp(cmd, "setConfig") == 0) {
         JsonObject d = doc["data"];
         bool mprChanged = false, keyChanged = false;
+        bool holdTimeoutChanged = false;
+
+        if (!d["holdTimeoutMs"].isNull()) {
+            if (!d["holdTimeoutMs"].is<uint32_t>()) {
+                client->text("{\"type\":\"error\",\"message\":\"Hold timeout must be an integer from 0 to 3600000 ms\"}");
+                return;
+            }
+            uint32_t timeoutMs = d["holdTimeoutMs"].as<uint32_t>();
+            if (timeoutMs > 3600000UL) {
+                client->text("{\"type\":\"error\",\"message\":\"Hold timeout must be an integer from 0 to 3600000 ms\"}");
+                return;
+            }
+            cfg.holdTimeoutMs = timeoutMs;
+            holdTimeoutChanged = true;
+        }
 
         // WiFi
         if (d["wifi"]["ssid"].is<const char*>()) {
@@ -676,6 +698,7 @@ static void handleWsMessage(AsyncWebSocketClient* client, uint8_t* data, size_t 
         JsonDocument ack;
         ack["type"] = "ack";
         ack["cmd"]  = "setConfig";
+        if (holdTimeoutChanged) ack["holdTimeoutMs"] = cfg.holdTimeoutMs;
         JsonArray ks = ack["keys"].to<JsonArray>();
         for (int i = 0; i < NUM_KEYS; i++) {
             JsonObject o = ks.add<JsonObject>();
@@ -1093,6 +1116,8 @@ void setup() {
 
     memset(keyOffAt,      0, sizeof(keyOffAt));
     memset(keyOffPending, 0, sizeof(keyOffPending));
+    memset(keyPressedAt,  0, sizeof(keyPressedAt));
+    memset(keyTimedOut,   0, sizeof(keyTimedOut));
 
     // BLE is intentionally OFF at every boot — the user must opt in each session
     // via System → Bluetooth → Start BLE. Reasons: paired hosts can flap until
@@ -1123,13 +1148,28 @@ void loop() {
             uint16_t holdMs = cfg.keys[i].relDelay;
 
             if (rawOn) {
-                if (!logOn) {
+                if (!keyTimedOut[i] && !logOn) {
                     logicalKeyState |= (1UL << i);
                     BleOut::keyDown(i);
+                    keyPressedAt[i] = now;
                     changed = true;
                 }
+                if (keyTimedOut[i]) continue;
                 keyOffPending[i] = false;   // still pressed, cancel pending off
+                if (cfg.holdTimeoutMs > 0 && logOn &&
+                    (uint32_t)(now - keyPressedAt[i]) >= cfg.holdTimeoutMs) {
+                    logicalKeyState &= ~(1UL << i);
+                    BleOut::keyUp(i);
+                    keyTimedOut[i] = true;
+                    keyOffPending[i] = false;
+                    changed = true;
+                }
             } else {
+                if (keyTimedOut[i]) {
+                    keyTimedOut[i] = false;
+                    keyOffPending[i] = false;
+                    continue;
+                }
                 if (logOn) {
                     if (holdMs == 0) {
                         logicalKeyState &= ~(1UL << i);

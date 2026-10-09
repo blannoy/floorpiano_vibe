@@ -95,6 +95,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
 .bar-fill{position:absolute;bottom:0;left:0;width:100%;background:#6fff9e;transition:height .04s,background .04s}
 .bar-col.hit .bar-fill{background:#ffa000}
 .bar-thresh{position:absolute;left:0;width:100%;height:0;border-top:2px dashed #ff5c7a;opacity:.95;z-index:2}
+.bar-release{position:absolute;left:0;width:100%;height:0;border-top:2px dotted #59c7e8;opacity:.95;z-index:2}
 .bar-label{font-size:.58rem;color:#607080;margin-top:4px;text-align:center;line-height:1.1}
 .bar-col.hit .bar-label{color:#ffa000;font-weight:600}
 
@@ -156,6 +157,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
 <div id="tab-piano" class="tab active">
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <button id="piano-live-btn" class="live-off" onclick="togglePoll()">▶ Start playing</button>
+    <button class="secondary" onclick="reapplyKeySettings()">Reset keys</button>
     <span id="piano-ble-row" style="display:none;align-items:center;gap:8px">
       <label for="piano-output" style="font-size:.78rem;color:#a0b4cc">Output:</label>
       <select id="piano-output" onchange="setPianoOutput()" style="padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px;font-size:.82rem">
@@ -167,6 +169,19 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
     </span>
     <span style="font-size:.78rem;color:#607080">
       Keys only respond while live. Turn this off during setup/calibration so the piano stays quiet.
+    </span>
+  </div>
+  <div style="font-size:.72rem;color:#607080;margin:-4px 0 8px">
+    Reset keys reapplies the current per-key settings; sensor readings may briefly pause.
+  </div>
+  <div class="row" style="margin-bottom:12px">
+    <label for="hold-timeout-ms">Maximum hold (all keys)</label>
+    <input type="number" id="hold-timeout-ms" min="1" max="3600000" step="1000"
+      placeholder="milliseconds" style="width:130px;padding:4px 6px;background:#0f3460;border:1px solid #2a5080;color:#e0e0e0;border-radius:4px">
+    <button class="secondary" onclick="applyHoldTimeout()">Apply timeout</button>
+    <button class="secondary" onclick="removeHoldTimeout()">Remove timeout</button>
+    <span style="font-size:.72rem;color:#607080">
+      Forces a held key off after this time; it stays off until lifted. 0–3,600,000 ms; disabled by default.
     </span>
   </div>
   <div id="piano-wrap"><div id="piano-keys"></div></div>
@@ -217,7 +232,8 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
   <div style="margin-bottom:12px;font-size:.82rem;color:#a0b4cc;line-height:1.5">
     Each bar = <b>Δ (baseline − filtered)</b>, i.e. how hard each key is currently being touched.
     Press one key and watch whether <b>neighbouring bars also rise</b> — that's cross-talk.
-    The dashed red line is that key's touch threshold; a bar turns <span style="color:#ffa000">orange</span> when registered as a hit.
+    The dashed red line is the touch threshold; the dotted blue line is the release threshold.
+    A bar turns <span style="color:#ffa000">orange</span> when registered as a hit.
   </div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px">
     <span style="font-size:.8rem;color:#607080">Stream:
@@ -228,7 +244,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
       <span class="vv" id="bars-scale-v">64</span>
     </label>
     <label style="font-size:.8rem;color:#a0b4cc;display:flex;align-items:center;gap:6px">
-      <input type="checkbox" id="bars-thresh-show" checked> show threshold line
+      <input type="checkbox" id="bars-thresh-show" checked> show threshold lines
     </label>
   </div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
@@ -324,7 +340,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
     </div>
     <div class="row">
       <label>Release at</label>
-      <input type="range" id="thwiz-rel" min="2" max="50" value="20" oninput="thwizRecompute()">
+      <input type="range" id="thwiz-rel" min="2" max="80" value="50" oninput="thwizRecompute()">
       <span class="vv" id="thwiz-rel-v">20%</span>
       <span style="font-size:.72rem;color:#607080">
         % of the key's peak — the press counts as released once the signal drops below this
@@ -698,7 +714,7 @@ button.secondary{padding:6px 14px;background:#0f3460;border:1px solid #e94560;bo
 
   <div class="section" style="margin-top:14px">
     <h3>Device Control</h3>
-    <button class="secondary" onclick="rebootDevice()">Reboot NodeMCU</button>
+    <button class="secondary" onclick="rebootDevice()">Reboot piano</button>
   </div>
 </div>
 
@@ -787,6 +803,7 @@ function handleJSON(msg) {
   if (msg.type === 'debug')  { handleDebugData(msg); }
   if (msg.type === 'info')   { updateSysInfo(msg); }
   if (msg.type === 'ack')    { handleAck(msg); }
+  if (msg.type === 'error')  { toast(msg.message || 'Device rejected the setting', 'err'); }
   if (msg.type === 'calibResult') { renderCalibResult(msg); }
   if (msg.type === 'wifiScan')    { renderWifiScan(msg); }
   if (msg.type === 'bleStatus')   { renderBleStatus(msg); }
@@ -816,7 +833,13 @@ const ACK_MSG = {
 let deviceThresholds = null;   // [{t,r}, …] for 24 keys
 function handleAck(msg) {
   const cmd = msg.cmd;
-  toast(ACK_MSG[cmd] || 'Done ✓', 'ok');
+  if (cmd === 'setConfig' && msg.holdTimeoutMs !== undefined) {
+    document.getElementById('hold-timeout-ms').value = msg.holdTimeoutMs || '';
+    if (cfg) cfg.holdTimeoutMs = msg.holdTimeoutMs;
+    toast(msg.holdTimeoutMs ? `Hold timeout set to ${msg.holdTimeoutMs} ms` : 'Hold timeout removed', 'ok');
+  } else {
+    toast(ACK_MSG[cmd] || 'Done ✓', 'ok');
+  }
   if (cmd === 'setConfig' && Array.isArray(msg.keys)) {
     deviceThresholds = msg.keys;   // the device's actual stored thresholds
     confirmThresholdApply(msg.keys);
@@ -1015,6 +1038,7 @@ function buildKeysTable() {
 
 function applyConfigToUI() {
   if (!cfg) return;
+  document.getElementById('hold-timeout-ms').value = cfg.holdTimeoutMs || '';
   const m = cfg.mpr || {};
   document.getElementById('s-tth').value   = m.tth   || 12;
   document.getElementById('s-rth').value   = m.rth   || 6;
@@ -1103,6 +1127,21 @@ function saveMPR() {
     tl:      parseInt(document.getElementById('s-tl').value),
   }};
   wsSend({cmd:'setConfig', data});
+}
+
+function applyHoldTimeout() {
+  const input = document.getElementById('hold-timeout-ms');
+  const timeoutMs = Number(input.value);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000) {
+    toast('Enter a whole number from 1 to 3,600,000 ms', 'err');
+    return;
+  }
+  wsSend({cmd:'setConfig', data:{holdTimeoutMs:timeoutMs}});
+}
+
+function removeHoldTimeout() {
+  document.getElementById('hold-timeout-ms').value = '';
+  wsSend({cmd:'setConfig', data:{holdTimeoutMs:0}});
 }
 
 function saveKeys() {
@@ -1312,6 +1351,7 @@ function buildBars() {
     col.innerHTML =
       `<div class="bar-val" id="bar-val-${i}"></div>` +
       `<div class="bar-track"><div class="bar-thresh" id="bar-th-${i}"></div>` +
+      `<div class="bar-release" id="bar-rh-${i}"></div>` +
       `<div class="bar-fill" id="bar-fill-${i}"></div></div>` +
       `<div class="bar-label">${i}<br>${noteName(midi)}</div>`;
     wrap.appendChild(col);
@@ -1331,11 +1371,15 @@ function updateBars(msg) {
     document.getElementById('bar-col-' + i).classList.toggle('hit', !!d.p);
     document.getElementById('bar-val-' + i).textContent = delta;
     const th = document.getElementById('bar-th-' + i);
+    const rh = document.getElementById('bar-rh-' + i);
     if (showTh) {
       th.style.display = 'block';
       th.style.bottom = Math.min(100, d.th / scale * 100) + '%';
+      rh.style.display = 'block';
+      rh.style.bottom = Math.min(100, d.rh / scale * 100) + '%';
     } else {
       th.style.display = 'none';
+      rh.style.display = 'none';
     }
   });
 }
